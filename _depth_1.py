@@ -24,7 +24,7 @@ if __name__ == '__main__':
     color_2 = [27, 71, 92]
     mesh_2 = Mesh.from_stl("unit_cube.stl", np.array(color_2)/225,\
         np.array([1.0, 1.0, 1.0]),0.05,1.0,0.2,100)
-    mesh_2.transform.set_position(-1,-2,-1.5)
+    mesh_2.transform.set_position(-1,-2,-3)
 
     color_3 = [180, 189, 98]
     mesh_3 = Mesh.from_stl("unit_sphere.stl", np.array(color_3)/225,\
