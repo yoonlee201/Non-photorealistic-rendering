@@ -35,6 +35,8 @@ class Mesh:
     def add_normal(self, normal):
         self.normals.append(normal)
         
+
+        
     def __getattr__(self, name):
         
         diffuse_color, specular_color = self.color
@@ -60,7 +62,7 @@ class Mesh:
         
         # create a new Mesh object
         this_mesh = Mesh(diffuse_color, specular_color, ka, kd, ks, ke)
-
+        this_mesh.both_normals = [[] for _ in range(len(stl_mesh.vectors))]
         # extract vertices from the mesh
         for i in range(len(stl_mesh.vectors)):
             # this_mesh.add_normal(Vector3.from_array(stl_mesh.normals[i]))
@@ -73,6 +75,7 @@ class Mesh:
             # calculating the normal and add it to the mesh
             n = v1.cross(v2).normalized()
             this_mesh.add_normal(n)
+            
             
             # add the vertices to the mesh
             for arr in stl_mesh.vectors[i]:
@@ -91,5 +94,5 @@ class Mesh:
             
             # getting the indicies of the triangle vertices and adding them to the face list
             this_mesh.add_face((p0_index, p1_index, p2_index))
-        # return the mesh 
+            
         return this_mesh

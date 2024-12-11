@@ -7,6 +7,8 @@ from mesh import Mesh
 from light import Light
 from PIL import Image
 from paint import Paint
+import math
+import cv2
 
 class Renderer:
     def __init__(self, screen: Screen, camera: Camera, mesh_list: List[Mesh], light: Light):
@@ -15,84 +17,52 @@ class Renderer:
         self.mesh_list = mesh_list
         self.light = light
         self.paint = Paint(self.screen.width, self.screen.height)
-        
-    def render_barycentric(self, buff: np.ndarray, x, y, alpha, beta, gamma):
-        buff[x, y] = (255 * np.array([alpha, beta, gamma]))
 
-    def render_flat(self, buff: np.ndarray, x, y, z, point_light:Vector3, norm_vec:Vector3, ambient, _diffuse):
-        p = self.screen.inverse_project_point(Vector3(x, y, z))
-        frag_world = self.camera.inverse_project_point(p)
-        light_vec = (point_light-frag_world)
-        
-        # vector normalization
-        L = (light_vec).normalized()
-        N = norm_vec.normalized()
-        
-        # diffuse reflection
-        d = (light_vec).magnitude()
-        diffuse = (_diffuse * max(L.dot(N), 0)) * (1/np.pi)* (self.light.intensity  / (d**2))
-        
-        color = np.clip((ambient + diffuse).to_array(), 0, 1) * 255
-        
-        buff[x,y] = color
-        
-    def render_phong(self, buff: np.ndarray, x, y, z, alpha, beta, gamma, n1, n2, n3,point_light:Vector3, ambient, _diffuse, _specular, mesh:Mesh):
-        
-        p = self.screen.inverse_project_point(Vector3(x, y, z))
-        frag_world = self.camera.inverse_project_point(p)
-        light_vec = (point_light - frag_world)
-        
-        # Normalize the light direction and normal vectors
-        L = light_vec.normalized()
-        N = (mesh.vertes_normals[n1] * alpha + mesh.vertes_normals[n2] * beta + mesh.vertes_normals[n3] * gamma).normalized()
-        
-        # Diffuse reflection
-        d = light_vec.magnitude()
-        diffuse = (_diffuse * max(L.dot(N), 0)) * (1 / np.pi) * (self.light.intensity / (d ** 2))
-        
-        # Specular reflection
-        V = (self.camera.get_view_vector() - frag_world).normalized()
-        R = (L - N * 2 * L.dot(N)).normalized()  # Reflect L around N
-        specular = (_specular * max(R.dot(V), 0) ** mesh.ke)
-        
-        # Final color including ambient, diffuse, and specular
-        color = np.clip((ambient + diffuse + specular).to_array(), 0, 1) * 255
-        buff[x, y] = color
+    def compute_color_gradient(self, color_buffer: np.ndarray) -> np.ndarray:
+        # Calculate gradients for each channel (R, G, B)
+        sobel_x = np.zeros_like(color_buffer, dtype=np.float32)
+        sobel_y = np.zeros_like(color_buffer, dtype=np.float32)
 
-    def render_gouraud(self, buff: np.ndarray, x, y, z, alpha, beta, gamma, n1, n2, n3, point_light:Vector3, ambient, _diffuse, _specular, mesh:Mesh):
-        
-        p = self.screen.inverse_project_point(Vector3(x, y, z))
-        frag_world = self.camera.inverse_project_point(p)
-        light_vec = (point_light - frag_world)
-        
-        # Normalize the light direction and normal vectors
-        L = light_vec.normalized()
-        # N = norm_vec.normalized()
-        # (mesh.vertes_normals[n1] * alpha + mesh.vertes_normals[n2] * beta + mesh.vertes_normals[n3] * gamma).normalized()
-        def get_color(i):
-            N = mesh.vertes_normals[i].normalized()
-            # Diffuse reflection
-            d = light_vec.magnitude()
-            diffuse = (_diffuse * max(L.dot(N), 0)) * (1 / np.pi) * (self.light.intensity / (d ** 2))
+        for i in range(3):  # For each channel (R, G, B)
+            sobel_x[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 1, 0, ksize=3)
+            sobel_y[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 0, 1, ksize=3)
 
-            # Specular reflection
-            V = (self.camera.get_view_vector() - frag_world).normalized()
-            R = (L - N * 2 *  max(L.dot(N), 0)).normalized()  # Reflect L around N
-            specular = (_specular * max(R.dot(V), 0) ** mesh.ke)
-            
-            color = np.clip((ambient + diffuse + specular).to_array(), 0, 1) * 255
-            
-            return color
-        
-        C1 = get_color(n1)
-        C2 = get_color(n2)
-        C3 = get_color(n3)
-        
-        # Final color including ambient, diffuse, and specular
-        buff[x, y] = np.clip((alpha * C1 + beta * C2 + gamma * C3), 0, 255)
-        
-        
-        
+        # Compute gradient magnitude for each channel
+        gradient_magnitude = np.sqrt(np.sum(sobel_x**2 + sobel_y**2, axis=2))
+
+        # Normalize the gradient for visualization
+        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 255, cv2.NORM_MINMAX)
+        return gradient_magnitude.astype(np.uint8)
+    
+    def compute_depth_gradient(self, z_buffer: np.ndarray) -> np.ndarray:
+        # Calculate Sobel gradients in X and Y directions
+        sobel_x = cv2.Sobel(z_buffer, cv2.CV_64F, 1, 0, ksize=3)  # Gradient in X direction
+        sobel_y = cv2.Sobel(z_buffer, cv2.CV_64F, 0, 1, ksize=3)  # Gradient in Y direction
+
+        # Compute gradient magnitude
+        gradient_magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
+
+        # Normalize the gradient for visualization
+        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 255, cv2.NORM_MINMAX)
+        return gradient_magnitude.astype(np.uint8)
+    
+    def compute_normal_gradient(self, normal_buffer: np.ndarray) -> np.ndarray:
+        # Calculate gradients for each normal component
+        sobel_x = np.zeros_like(normal_buffer, dtype=np.float32)
+        sobel_y = np.zeros_like(normal_buffer, dtype=np.float32)
+
+        for i in range(3):  # For each component (x, y, z)
+            sobel_x[:, :, i] = cv2.Sobel(normal_buffer[:, :, i], cv2.CV_64F, 1, 0, ksize=3)
+            sobel_y[:, :, i] = cv2.Sobel(normal_buffer[:, :, i], cv2.CV_64F, 0, 1, ksize=3)
+
+        # Combine gradients to calculate magnitude
+        gradient_magnitude = np.sqrt(np.sum(sobel_x**2 + sobel_y**2, axis=2))
+
+        # Normalize for visualization
+        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 255, cv2.NORM_MINMAX)
+        return gradient_magnitude.astype(np.uint8)
+
+
     def render(self, shading, bg_color, ambient_light):
         def barycentric(p, a, b, c):
             (x, y), (xa, ya), (xb, yb), (xc, yc) = p, a, b, c
@@ -110,7 +80,8 @@ class Renderer:
         # Create the buffer with background color
         buff = np.full((self.screen.width, self.screen.height, 3), bg_color, dtype=np.uint8)
         canvas = np.full((self.screen.width, self.screen.height, 3), (225,225,225), dtype=np.uint8)
-        z_buffer = np.full((self.screen.width, self.screen.height), -np.inf)
+        z_buffer = np.full((self.screen.width, self.screen.height), -np.inf, dtype=np.float64)
+        normal_buffer = np.full((self.screen.width, self.screen.height, 3), (0,0,0), dtype=np.float32)
         
         for mesh in self.mesh_list:
             for (n1, n2, n3), i in zip(mesh.faces, range(len(mesh.faces))):
@@ -127,6 +98,9 @@ class Renderer:
                 
                 # basic vectors for lighting
                 norm_vec  = mesh.transform.apply_to_normal(mesh.normals[i])
+                norm_degree = math.degrees(math.acos(norm_vec.dot(self.camera.get_view_vector())))
+                if norm_degree >= 90:
+                    continue
                 
                 point_light = self.light.transform.apply_to_point(Vector3(0, 0, 0))
                 
@@ -141,9 +115,6 @@ class Renderer:
                 min_y = max(min(v[1] for v in screen_coords), 0)
                 max_y = min(max(v[1] for v in screen_coords), self.screen.height - 1)
                 
-                
-                # vec_normals = [mesh.vertes_normals[n] for n in [n1, n2, n3]]
-                
                 for x in range(min_x, max_x + 1):
                     for y in range(min_y, max_y + 1):
                         
@@ -152,43 +123,119 @@ class Renderer:
                         if check:
                             z = (alpha * z_coords[0] + beta * z_coords[1] + gamma * z_coords[2]) 
                             if z >= 0 and z > z_buffer[x, y]:
-                                z_buffer[x, y] = z
+                                p = self.screen.inverse_project_point(Vector3(x, y, z))
+                                frag_world = self.camera.inverse_project_point(p)
+                                light_vec = (point_light - frag_world)
                                 
-                                if shading == 'barycentric':
-                                    self.render_barycentric(buff, x, y, alpha, beta, gamma)
-                                elif shading == 'flat':
-                                    self.render_flat(buff, x, y, z, point_light, norm_vec, ambient, _diffuse)
-                                elif shading == 'phong' or shading == 'paint':
-                                    self.render_phong(buff, x, y, z, alpha, beta, gamma, n1, n2, n3, point_light, ambient, _diffuse, _specular, mesh)
-                                elif shading == 'gouraud':
-                                    self.render_gouraud(buff, x, y, z, alpha, beta, gamma, n1, n2, n3, point_light, ambient, _diffuse, _specular, mesh)
-                                else:
-                                    gray = np.clip(255 * (z), 0, 255)
-                                    buff[x, y] = (gray, gray, gray)
-                                    
-        if shading == 'paint': 
-            self.paint.load_brush('brush-long-1.png')
-            self.paint.load_brush('brush-long-2.png')
-            self.paint.load_brush('brush-long-3.png')
-            self.paint.load_brush('brush-long-4.png')
-            self.paint.load_brush('brush-long-5.png')
-            
-            small_box_width = self.screen.width//100
-            small_box_height = self.screen.height//100
-            
-            while not self.paint.is_filled_90_percent():
-                for i in range(0, small_box_width):
-                    for j in range(0, small_box_height):
-                        random_indices = self.paint.paint_random_pixel_of_100x100(i*100, j*100)
-                        for x, y in random_indices:
-                            self.paint.paint_at_pixel(buff, x, y, canvas)
+                                # Normalize the light direction and normal vectors
+                                L = light_vec.normalized()
+                                N = (mesh.vertes_normals[n1] * alpha + mesh.vertes_normals[n2] * beta + mesh.vertes_normals[n3] * gamma).normalized()
+                                
+                                # Diffuse reflection
+                                d = light_vec.magnitude()
+                                diffuse = (_diffuse * max(L.dot(N), 0)) * (1 / np.pi) * (self.light.intensity / (d ** 2))
+                                
+                                # Specular reflection
+                                V = (self.camera.get_view_vector() - frag_world).normalized()
+                                R = (L - N * 2 * L.dot(N)).normalized()  # Reflect L around N
+                                specular = (_specular * max(R.dot(V), 0) ** mesh.ke)
+                                
+                                # Final color including ambient, diffuse, and specular
+                                color = np.clip((ambient + diffuse + specular).to_array(), 0, 1) * 255
+                                buff[x, y] = color
+                                normal_buffer[x, y] = N.to_array()
+                                z_buffer[x, y] = z
+               
+        # if shading == 'paint':
+            # Compute gradients
+        color_gradient = self.compute_color_gradient(buff)
+        depth_gradient = self.compute_depth_gradient(z_buffer)
+        normal_gradient = self.compute_normal_gradient(normal_buffer)
 
-            # # Regular space painting
-            # for x in range(0, self.screen.width, self.paint.target_size[0]):
-            #     for y in range(0, self.screen.height, self.paint.target_size[1]):
-            #         self.paint.paint_at_pixel(buff,  x, y, buff[x,y])
+        # Stack grayscale gradients into RGB format
+        if len(color_gradient.shape) == 2:
+            color_gradient = np.stack((color_gradient,) * 3, axis=-1)
+        if len(depth_gradient.shape) == 2:
+            depth_gradient = np.stack((depth_gradient,) * 3, axis=-1)
+        if len(normal_gradient.shape) == 2:
+            normal_gradient = np.stack((normal_gradient,) * 3, axis=-1)
+
+        # Ensure uint8 format
+        # color_gradient = color_gradient.astype(np.uint8)
+        # depth_gradient = depth_gradient.astype(np.uint8)
+        # normal_gradient = normal_gradient.astype(np.uint8)
+
+        # Display normal gradient (or replace with color_gradient or depth_gradient)
+        # self.screen.draw(normal_gradient)   
+        # print(z_buffer)
+        # depth_image = cv2.normalize(z_buffer, None, 0, 255, cv2.NORM_MINMAX)
+        depth_image = ((depth_gradient + 1) / 2 * 255).astype(np.uint8)
         
+        cv2.imshow("Depth Buffer", depth_image)
         
-        self.screen.draw(canvas)
+        normal_image = ((normal_buffer + 1) / 2 * 255).astype(np.uint8)
+        # cv2.imshow("Normal Buffer", normal_image)
+        
+        # print(depth_gradient)
+        self.screen.draw(depth_image) 
+                                    
+        # elif shading == 'paint': 
+        #     canvas = np.full((self.screen.width, self.screen.height, 3), bg_color, dtype=np.uint8)
+        
+        #     paint_long_large = [(41, 21), (31, 11)]
+        #     paint_long_small = [(31, 7), (21, 7)]
+        #     paint_point_large = [(21, 21), (11, 11)]
+        #     paint_point_small = [(7, 7), (5, 5)]
+        #     fill = [0.9999, 0.7, 0.5, 0.3]
+            
+        #     for brush_long, brush_point, ratio in zip(paint_long_large, paint_point_large, fill):
+        #         # for brush_size in paint_size:
+        #         self.paint.initialize_paint_coords()
+        #         self.paint.load_brush('brush/brush-1.png', brush_point)
+        #         self.paint.load_brush('brush/brush-2.png', brush_point)
+        #         self.paint.load_brush('brush/brush-3.png', brush_point)
+        #         self.paint.load_brush('brush/brush-4.png', brush_point)
+        #         self.paint.load_brush('brush/brush-long-1.png', brush_long)
+        #         self.paint.load_brush('brush/brush-long-3.png', brush_long)
+        #         self.paint.load_brush('brush/brush-long-4.png', brush_long)
+        #         self.paint.load_brush('brush/brush-long-6.png', brush_long)
+        #         self.paint.load_brush('brush/brush-long-7.png', brush_long)
+                
+        #         small_box_width = self.screen.width//100
+        #         small_box_height = self.screen.height//100
+                
+        #         while not self.paint.is_filled_90_percent(fill_ratio=ratio):
+        #             for i in range(0, small_box_width):
+        #                 for j in range(0, small_box_height):
+        #                     random_indices = self.paint.paint_random_pixel_of_100x100(i*100, j*100)
+        #                     for x, y in random_indices:
+        #                         self.paint.paint_at_pixel(buff, x, y, canvas, index, z_buffer)
+            
+        #     # for brush_long, brush_point, ratio, index in zip(paint_long_small, paint_point_small, fill):
+        #     #     # for brush_size in paint_size:
+        #     #     self.paint.initialize_paint_coords()
+        #     #     self.paint.load_brush('brush/brush-1.png', brush_point)
+        #     #     self.paint.load_brush('brush/brush-2.png', brush_point)
+        #     #     self.paint.load_brush('brush/brush-3.png', brush_point)
+        #     #     self.paint.load_brush('brush/brush-4.png', brush_point)
+        #     #     self.paint.load_brush('brush/brush-long-1.png', brush_long)
+        #     #     self.paint.load_brush('brush/brush-long-3.png', brush_long)
+        #     #     self.paint.load_brush('brush/brush-long-4.png', brush_long)
+        #     #     self.paint.load_brush('brush/brush-long-6.png', brush_long)
+        #     #     self.paint.load_brush('brush/brush-long-7.png', brush_long)
+                
+        #     #     small_box_width = self.screen.width//100
+        #     #     small_box_height = self.screen.height//100
+                
+        #     #     while not self.paint.is_filled_90_percent(fill_ratio=ratio):
+        #     #         for i in range(0, small_box_width):
+        #     #             for j in range(0, small_box_height):
+        #     #                 random_indices = self.paint.paint_random_pixel_of_100x100(i*100, j*100)
+        #     #                 for x, y in random_indices:
+        #     #                     self.paint.paint_at_pixel(buff, x, y, canvas, index, z_buffer)
+        #     self.screen.draw(canvas)
+            
+        # else: 
+        #     self.screen.draw(buff)
         
         

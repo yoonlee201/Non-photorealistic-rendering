@@ -3,15 +3,20 @@ from PIL import Image
 import numpy as np
 import random
 
-class Paint():
+class Paint:
     def __init__(self, width=1000, height=1000):
         self.brush = []
+        self.paint_coords = np.zeros((width, height), dtype=np.uint8)
         self.width = width
         self.height = height
-        self.paint_coords = np.zeros((width, height), dtype=np.uint8)
-        self.target_size = (31, 11)
+        # self.target_size = (31, 11)  # Default brush size
 
-    def load_brush(self, image_path):
+    def initialize_paint_coords(self):
+        """Reset the paint coordinates for a new canvas."""
+        self.paint_coords = np.zeros((self.width, self.height), dtype=np.uint8)
+        self.brush = []
+
+    def load_brush(self, image_path, size):
         image = Image.open(image_path).convert("RGBA")  # Handle transparency
 
         image_array = np.array(image)
@@ -30,43 +35,46 @@ class Paint():
         cropped_array = rgb_array[x_min:x_max+1, y_min:y_max+1]
 
         cropped_image = Image.fromarray(cropped_array)
-        (width, height) = self.target_size
+        (width, height) = size
         resized_image = cropped_image.resize((height, width), Image.Resampling.LANCZOS)
 
         self.brush = self.brush + [np.array(resized_image)]
         
 
-    def paint_at_pixel(self, buff: np.ndarray, org_x, org_y, canvas: np.ndarray):
-        (target_x, target_y) = self.target_size
+    def paint_at_pixel(self, buff: np.ndarray, org_x, org_y, canvas: np.ndarray, index):
+        # get the valid start of the region to paint and for the brush
+        brush = self.brush[np.random.randint(0,len(self.brush))]
+        (target_x, target_y) = brush.shape[:2]
+        
         start_x =  max(org_x - target_x // 2, 0)
         start_y = max(org_y - target_y // 2, 0)
-        
         end_x = min(org_x + target_x // 2, self.width)
         end_y = min(org_y + target_y // 2, self.height)
-
-        # print(start_x, start_y, end_x, end_y, target_x, target_y, org_x, org_y)
-# 
-        # Calculate mean color of the region in the buffer
+        
+        # get the mean color of the region
         region = buff[start_x:end_x, start_y:end_y]
-        mean_color = region.mean(axis=(0, 1))  # Calculate mean for each channel (R, G, B)
-
-        # Apply the brush stroke
+        mean_color = region.mean(axis=(0, 1))  
+        
+        #  paint the region
         for x, brush_x in zip(range(start_x, end_x), range(0,target_x)):
             for y, brush_y in zip(range(start_y, end_y), range(0, target_y)):
-                # print(x, y, brush_x, brush_y)
-                # print(self.brush.shape)
-                brush_pixel = self.brush[np.random.randint(0,len(self.brush))][brush_x, brush_y]
+                # get a random brush pixel
+                brush_pixel = brush[brush_x, brush_y]
                 brush_alpha = np.mean(brush_pixel) / 255.0
 
+                # color the 
                 if brush_alpha > 0:  
+                    # if index == 0:
                     canvas[x, y] = mean_color
+                    # else:
+                        # canvas[x, y] = (1 - brush_alpha) * canvas[x, y] + brush_alpha * mean_color
                     self.paint_coords[x, y] = 1
 
     def is_filled_90_percent(self, threshold=1.0, fill_ratio=0.999):
         total_pixels = self.paint_coords.size
         filled_pixels = np.count_nonzero(self.paint_coords >= threshold)
         return filled_pixels / total_pixels >= fill_ratio
-    
+
     def paint_random_pixel_of_100x100(self, row, col, size=100, samples_per_block=10):
         block = self.paint_coords[row:row + size, col:col + size]
         mask = block == 0 
@@ -79,5 +87,22 @@ class Paint():
         global_indices = random_indices + np.array([row, col])
 
         return global_indices.tolist()
+    
+    def paint_at_pixel_with_angle(self, org_x, org_y, canvas, rotated_brush, lighting_color):
+        """Paint a brush stroke at a specific position using the given lighting color."""
+        target_x, target_y = rotated_brush.shape[:2]
+        start_x = max(org_x - target_x // 2, 0)
+        start_y = max(org_y - target_y // 2, 0)
+        end_x = min(org_x + target_x // 2, self.width)
+        end_y = min(org_y + target_y // 2, self.height)
 
+        # Paint the region
+        for x, brush_x in zip(range(start_x, end_x), range(rotated_brush.shape[0])):
+            for y, brush_y in zip(range(start_y, end_y), range(rotated_brush.shape[1])):
+                brush_pixel = rotated_brush[brush_x, brush_y]
+                brush_alpha = np.mean(brush_pixel) / 255.0
+                if brush_alpha > 0:
+                    
+                    canvas[x, y] = (1 - brush_alpha) * canvas[x, y] + brush_alpha * lighting_color
+                    self.paint_coords[x, y] = 1
 

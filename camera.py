@@ -9,7 +9,7 @@ class Camera:
         self.coord = (left, right, bottom, top, near, far)
     
     def get_view_vector(self):
-        return self.transform.apply_inverse_to_point(Vector3(0, 0, -1))
+        return self.transform.apply_to_normal(Vector3(0, 0, 1))
 
     def depth(self):
         (_, _, _, _, n, f) = self.coord
