@@ -1,70 +1,86 @@
-
 import numpy as np
 import pygame
-from vector import Vector3
 
 class Screen:
     def __init__(self, width: int, height: int):
         self.width = width
         self.height = height
+
         pygame.init()
         self.screen = pygame.display.set_mode([width, height])
 
     def ratio(self):
         return self.width / self.height
     
+    def get_width(self):
+        return self.width
     
-    def inverse_project_point(self, p: Vector3):
-        x = p.x / self.width * 2 - 1
-        y = p.y / self.height * 2 - 1
-        z = p.z * 2 - 1
-        return Vector3(x, y, z)
+    def get_height(self):
+        return self.height
     
-    def project_point(self, p: Vector3):
-        # v = self.zero_and_one_coordinates(p)
-        x = int((1 + p.x) / 2  * self.width / self.ratio())
-        y = int((1 + p.y) / 2  * self.height )
-        z = (1 + p.z) / 2 
-        return (x,y,z)
-
     def draw(self, buf: np.ndarray):
         """Takes a buffer of 8-bit RGB pixels and puts them on the canvas.
         buf should be a ndarray of shape (height, width, 3)"""
-        # Make sure that the buffer is HxWx3
-        # if buf.shape != (self.height, self.width, 3):
-        #     raise Exception("buffer and screen not the same size")
+        if buf.shape != (self.height, self.width, 3):
+            raise Exception("buffer and screen not the same size")
 
-        # Flip buffer to account for 0,0 in bottom left while plotting, but 0,0 in top left in pygame
-        buf = np.fliplr(buf)
+        # Flip buffer to account for coordinate system differences
+        buf = np.flipud(buf)  # Correctly flip vertically
 
-        # The prefered way to accomplish this
+        # Draw the buffer to the screen
         pygame.pixelcopy.array_to_surface(self.screen, buf)
-
-        # An alternative (slower) way, but still valid
-        # Iterate over the pixels and paint them
-        # for x, row in enumerate(buf):
-            # for y, pix in enumerate(row):
-                # self.screen.set_at((x, y), pix.tolist())
 
         # Update the display
         pygame.display.flip()
 
+    def draw_line(self, a, b, color, buf: np.ndarray):
+        """Implement line drawing from point(s) a to b."""
+        for (x0, y0), (x1, y1) in zip(a, b):
+            # Calculate the delta x and delta y
+            dx = abs(x1 - x0)
+            dy = abs(y1 - y0)
+
+            # Determine where to move 
+            move_x = 1 if x0 < x1 else -1
+            move_y = 1 if y0 < y1 else -1
+
+            err = dx - dy
+            
+            while True:
+                if 0 <= x0 < self.width and 0 <= y0 < self.height:
+                    buf[y0, x0] = color  # Access as (row, column)
+                
+                if x0 == x1 and y0 == y1:
+                    break
+                
+                e2 = 2 * err
+                if e2 > -dy:
+                    err -= dy
+                    x0 += move_x
+                if e2 < dx:
+                    err += dx
+                    y0 += move_y
+        self.draw(buf)
+
+    def draw_polygon(self, points, color, buf: np.ndarray):
+        """Implement line drawing from point(s) a to b, then color the pixels within the defined polygon."""
+        # This method needs to be implemented
+        pass
+
     def show(self):
-        """Shows the canvas"""
+        """Shows the canvas."""
         running = True
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_s:
                         from datetime import datetime
                         pygame.image.save(self.screen, datetime.now().strftime("./%m-%d-%Y_%H--%M--%S.png"))
-
-
         pygame.quit()
-        
-        
-        
-        
+
+    def device_to_screen(self, p):
+        x = int((p[0] + 1) * self.width / 2)
+        y = int((1 - (p[1] + 1) * self.height / 2) * -1)
+        return x, y 
