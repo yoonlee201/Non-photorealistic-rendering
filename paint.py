@@ -113,14 +113,8 @@ class Paint:
         if angle == 360:
             angle = 0
             
-        if angle == 0:
-            angle = 90
-        elif angle == 90:
-            angle = 180
-        elif angle == 180:
-            angle = 270
-        elif angle == 270:
-            angle = 0
+        if angle in [0,90,180,270]:
+            angle = angle + 90
             
         # print("Angle: " , angle, angle_buffer[x, y])
         return self.rotate[angle][np.random.randint(0,len(self.rotate[angle]))]
