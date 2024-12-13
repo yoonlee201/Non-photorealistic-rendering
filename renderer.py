@@ -18,56 +18,6 @@ class Renderer:
         self.light = light
         self.paint = Paint(self.screen.width, self.screen.height)
 
-    def compute_color_gradient(self, color_buffer: np.ndarray) -> np.ndarray:
-        # Calculate Sobel gradients for each channel (R, G, B)
-        sobel_x = np.zeros_like(color_buffer, dtype=np.float32)
-        sobel_y = np.zeros_like(color_buffer, dtype=np.float32)
-
-        for i in range(3):  # For each color channel (R, G, B)
-            sobel_x[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 1, 0, ksize=3)
-            sobel_y[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 0, 1, ksize=3)
-
-        # Compute gradient magnitude and direction
-        gradient_magnitude = np.sqrt(np.sum(sobel_x**2 + sobel_y**2, axis=2))
-        gradient_direction = np.arctan2(np.mean(sobel_y, axis=2), np.mean(sobel_x, axis=2))
-
-        # Normalize gradient magnitude for visualization
-        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 25, cv2.NORM_MINMAX)
-
-        # Return as uint8 for further processing
-        return gradient_magnitude.astype(np.uint8), gradient_direction
-    
-    def compute_depth_gradient(self, z_buffer: np.ndarray):
-        # Calculate Sobel gradients in X and Y directions
-        gray_img = cv2.cvtColor(z_buffer, cv2.COLOR_BGR2GRAY)
-        sobel_x = cv2.Sobel(gray_img, cv2.CV_64F, 1, 0, ksize=5)  # Gradient in X direction
-        sobel_y = cv2.Sobel(gray_img, cv2.CV_64F, 0, 1, ksize=5)  # Gradient in Y direction
-
-        # Compute gradient magnitude
-        gradient_magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
-        gradient_direction = np.arctan2(sobel_y, sobel_x) * 180 / np.pi
-
-        # Normalize the gradient for visualization
-        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 255, cv2.NORM_MINMAX)
-        gradient_direction = cv2.normalize(gradient_direction, None, 0, 360, cv2.NORM_MINMAX)
-        return gradient_magnitude.astype(np.uint8), gradient_direction.astype(np.uint8)
-    
-    def compute_normal_gradient(self, normal_buffer: np.ndarray) -> np.ndarray:
-        # Calculate gradients for each normal component
-        sobel_x = np.zeros_like(normal_buffer, dtype=np.float32)
-        sobel_y = np.zeros_like(normal_buffer, dtype=np.float32)
-
-        for i in range(3):  # For each component (x, y, z)
-            sobel_x[:, :, i] = cv2.Sobel(normal_buffer[:, :, i], cv2.CV_64F, 1, 0, ksize=3)
-            sobel_y[:, :, i] = cv2.Sobel(normal_buffer[:, :, i], cv2.CV_64F, 0, 1, ksize=3)
-
-        # Combine gradients to calculate magnitude
-        gradient_magnitude = np.sqrt(np.sum(sobel_x**2 + sobel_y**2, axis=2))
-
-        # Normalize for visualization
-        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 255, cv2.NORM_MINMAX)
-        return gradient_magnitude.astype(np.uint8)
-
 
     def render(self, shading, bg_color, ambient_light):
         def barycentric(p, a, b, c):
@@ -87,8 +37,9 @@ class Renderer:
         buff = np.full((self.screen.width, self.screen.height, 3), bg_color, dtype=np.uint8)
         canvas = np.full((self.screen.width, self.screen.height, 3), (225,225,225), dtype=np.uint8)
         z_buffer = np.full((self.screen.width, self.screen.height), -np.inf, dtype=np.float64)
-        normal_buffer = np.full((self.screen.width, self.screen.height, 3), (0,0,0), dtype=np.float32)
+        faded = np.full((self.screen.width, self.screen.height, 3), (0,0,0), dtype=np.float32)
         depth_buffer = np.full((self.screen.width, self.screen.height, 3), (0,0,0), dtype=np.uint8)
+        canvas = np.full((self.screen.width, self.screen.height, 3), bg_color, dtype=np.uint8)
         
         for mesh in self.mesh_list:
             for (n1, n2, n3), i in zip(mesh.faces, range(len(mesh.faces))):
@@ -145,80 +96,74 @@ class Renderer:
                                 specular = (_specular * max(R.dot(V), 0) ** mesh.ke)
                                 
                                 # Final color including ambient, diffuse, and specular
+                                depth = min(np.clip(255 * (z), 0, 255)/225 + 0.5, 1.0)
+                                fade_color = np.array(bg_color) # Fading toward white
+
                                 color = np.clip((ambient + diffuse + specular).to_array(), 0, 1) * 255
-                                buff[x, y] = color
-                                normal_buffer[x, y] = norm_vec.to_array()
+                                
+                                fade_weight = 0.8
+                                faded_color = (1 - depth * fade_weight) * fade_color + (depth * fade_weight) * color
+                                canvas_color = (_diffuse * (1 / np.pi) * (self.light.intensity / (d ** 2))).to_array() * 255
+                                canvas_fade = (1 - depth * fade_weight) * fade_color + (depth * fade_weight) * canvas_color
+                                
+                                buff[x, y] = color 
+                                faded[x, y] = faded_color
+                                canvas[x,y] = canvas_fade
                                 z_buffer[x, y] = z
                                 depth_buffer[x, y] = np.clip(255 * (z), 0, 255)
-               
-        # if shading == 'paint':
-            # Compute gradients
-        color_gradient_magnitude, color_gradient_direcion = self.compute_color_gradient(buff)
-        # print(color_gradient_magnitude,color_gradient_direcion.shape)  
-        # # Stack grayscale gradients into RGB format
-        # if len(color_gradient_magnitude.shape) == 2:
-        #     color_gradient_magnitude = np.stack((color_gradient_magnitude,) * 3, axis=-1)
-        # if len(color_gradient_direcion.shape) == 2:
-        #     color_gradient_direcion = np.stack((color_gradient_direcion,) * 3, axis=-1)
-
-        normal_image = ((normal_buffer + 1) / 2 * 255).astype(np.uint8)
-                                    
-        # el
-        canvas = np.full((self.screen.width, self.screen.height, 3), bg_color, dtype=np.uint8)
-    
-        paint_long_large = [(41, 21), (31, 11)]
-        paint_long_small = [(31, 7), (21, 7)]
-        paint_point_large = [(21, 21), (11, 11)]
-        paint_point_small = [(7, 7), (5, 5)]
-        fill = [0.9999, 0.7]
+                                
         
-        for brush_long, brush_point, ratio in zip(paint_long_large, paint_point_large, fill):
+        color_gradient_magnitude, color_gradient_direcion = self.paint.compute_color_gradient(buff)
+
+        paint_size = [(60, 60),(40, 40),(20, 20)]
+        fill = [0.98, 0.8, 0.7, 0.5]
+        
+        for brush_size, ratio in zip(paint_size, fill):
             # for brush_size in paint_size:
             self.paint.initialize_paint_coords()
-            self.paint.load_brush('brush/brush-1.png', brush_point)
-            self.paint.load_brush('brush/brush-2.png', brush_point)
-            self.paint.load_brush('brush/brush-3.png', brush_point)
-            self.paint.load_brush('brush/brush-4.png', brush_point)
-            self.paint.load_brush('brush/brush-long-1.png', brush_long)
-            self.paint.load_brush('brush/brush-long-3.png', brush_long)
-            self.paint.load_brush('brush/brush-long-4.png', brush_long)
-            self.paint.load_brush('brush/brush-long-6.png', brush_long)
-            self.paint.load_brush('brush/brush-long-7.png', brush_long)
+            self.paint.load_brush('brush/brush-5.png', brush_size)
+            self.paint.load_brush('brush/brush-6.png', brush_size)
+            self.paint.load_brush('brush/brush-7.png', brush_size)
+            self.paint.load_brush('brush/brush-8.png', brush_size)
+            self.paint.load_brush('brush/brush-9.png', brush_size)
+            self.paint.load_brush('brush/brush-10.png', brush_size)
+            self.paint.load_brush('brush/brush-11.png', brush_size)
+            self.paint.load_brush('brush/brush-12.png', brush_size)
+            self.paint.load_brush('brush/brush-13.png', brush_size)
+            self.paint.load_brush('brush/brush-14.png', brush_size)
             
             small_box_width = self.screen.width//100
             small_box_height = self.screen.height//100
-            
             while not self.paint.is_filled_90_percent(fill_ratio=ratio):
                 for i in range(0, small_box_width):
                     for j in range(0, small_box_height):
                         random_indices = self.paint.paint_random_pixel_of_100x100(i*100, j*100)
+                        # print(random_indices)
                         for x, y in random_indices:
-                            self.paint.paint_at_pixel(buff, x, y, canvas, depth_buffer, normal_image, color_gradient_magnitude)
+                            self.paint.paint_at_pixel(buff, x, y, canvas, color_gradient_direcion)
+            
         
-        # fill = [0.8, 0.5]
-        for brush_long, brush_point, ratio in zip(paint_long_small, paint_point_small, fill):
+        paint_size = [(20, 20), (10, 10)]
+        fill = [0.999, 0.98]
+        for brush_size, ratio in zip(paint_size, fill):
             # for brush_size in paint_size:
+            print("gradient")
             self.paint.initialize_paint_coords()
             self.paint.initialize_gradient_magnitude(color_gradient_magnitude)
-            self.paint.load_brush('brush/brush-1.png', brush_point)
-            self.paint.load_brush('brush/brush-2.png', brush_point)
-            self.paint.load_brush('brush/brush-3.png', brush_point)
-            self.paint.load_brush('brush/brush-4.png', brush_point)
-            # self.paint.load_brush('brush/brush-long-1.png', brush_long)
-            # self.paint.load_brush('brush/brush-long-3.png', brush_long)
-            # self.paint.load_brush('brush/brush-long-4.png', brush_long)
-            # self.paint.load_brush('brush/brush-long-6.png', brush_long)
-            # self.paint.load_brush('brush/brush-long-7.png', brush_long)
+            self.paint.load_brush('brush/brush-5.png', brush_size)
+            self.paint.load_brush('brush/brush-6.png', brush_size)
+            self.paint.load_brush('brush/brush-7.png', brush_size)
+            self.paint.load_brush('brush/brush-8.png', brush_size)
+            self.paint.load_brush('brush/brush-10.png', brush_size)
+            self.paint.load_brush('brush/brush-11.png', brush_size)
+            self.paint.load_brush('brush/brush-12.png', brush_size)
+            self.paint.load_brush('brush/brush-13.png', brush_size)
+            self.paint.load_brush('brush/brush-14.png', brush_size)
             
             while not self.paint.is_filled_color_gradient_magnitude(fill_ratio=ratio):
                 random_indices = self.paint.paint_random_pixel_of_gradient_magnitude()
-
-                if not random_indices:  # Stop if no valid pixels remain
-                    print("No more pixels to paint.")
-                    break
-
                 for x, y in random_indices:
-                    self.paint.paint_at_pixel_gradient(buff, x, y, canvas)
+                    self.paint.paint_at_pixel(buff, x, y, canvas, color_gradient_direcion, use_gradient=True)
 
                 
         self.screen.draw(canvas)
