@@ -5,82 +5,64 @@ import random
 import cv2
 
 class Paint:
-    def __init__(self, width=1000, height=1000):
-        # self.brush = []
-        
-        self.paint_coords = np.zeros((width, height), dtype=np.uint8)
+    def __init__(self, width, height):
         self.width = width
         self.height = height
+        self.set_up_palette()
+    
+    def set_up_palette(self):
+        # type = { size: {angle: [brushes]}}
+        self.brush_angle = 15
+        self.brushes = {}
         
-        # self.brush_size = [(80,80), (60,60), (40,40), (20,20)]
-        self.gradient_magnitude = []
-        self.rotate = {}
-        self.gradient = False
-
-    def initialize_paint_coords(self):
-        """Reset the paint coordinates for a new canvas."""
-        self.paint_coords = np.zeros((self.width, self.height), dtype=np.uint8)
-        # self.brush = []
-        self.rotate = {
-            0: [],
-            # 15: [],
-            30: [],
-            # 45: [],
-            60: [],
-            # 75: [],
-            90: [],
-            # 105: [],
-            120: [],
-            # 135: [],
-            150: [],
-            # 165: [],
-            180: [],
-            # 195: [],
-            210: [],
-            # 225: [],
-            240: [],
-            # 255: [],
-            270: [],
-            # 285: [],
-            300: [],
-            # 315: [],
-            330: [],
-            # 345: [],
-        }
+        self.brush_long = [60, 40, 20]
+        self.brush_short= [20, 10]
         
-    def initialize_gradient_magnitude(self, gradient_magnitude):
+        brush_size=[60, 40, 20, 10]
+        
+        brush_paths = [
+            'brush/brush-5.png', 
+            'brush/brush-6.png',
+            'brush/brush-7.png',
+            'brush/brush-8.png',
+            'brush/brush-9.png',
+            'brush/brush-10.png',
+            'brush/brush-11.png',
+            'brush/brush-12.png',
+            'brush/brush-13.png',
+            'brush/brush-14.png', 
+                       ]
+        
+        for size in brush_size:
+            self.brushes[size] = {}
+            for i in range(0, 360, self.brush_angle):
+                self.brushes[size][i] = []
+                
+        for size in brush_size:
+            for path in brush_paths:
+                self.load_brush(path, size)
+    
+    def set_canvas(self, bg_color):
+        self.canvas = np.full((self.height, self.width, 3), bg_color, dtype=np.uint8)
+        
+    def set_paint_coords(self, paint_coords):
+        if paint_coords is not None:
+            self.paint_coords = paint_coords
+        else:
+            self.paint_coords = np.zeros((self.width, self.height), dtype=np.uint8)
+        
+    def set_gradient_magnitude(self, gradient_magnitude: np.ndarray):
         self.gradient_magnitude = gradient_magnitude.copy()
      
-
-    def compute_color_gradient(self, color_buffer: np.ndarray) -> np.ndarray:
-        # Calculate Sobel gradients for each channel (R, G, B)
-        sobel_x = np.zeros_like(color_buffer, dtype=np.float32)
-        sobel_y = np.zeros_like(color_buffer, dtype=np.float32)
-
-        for i in range(3):  # For each color channel (R, G, B)
-            sobel_x[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 1, 0, ksize=5)
-            sobel_y[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 0, 1, ksize=5)
-
-        # Compute gradient magnitude and direction
-        gradient_magnitude = np.sqrt(np.sum(sobel_x**2 + sobel_y**2, axis=2))
-        gradient_direction = np.arctan2(np.mean(sobel_y, axis=2), np.mean(sobel_x, axis=2))
-
-        # Normalize gradient magnitude for visualization
-        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 40, cv2.NORM_MINMAX)
-        # gradient_direction = cv2.normalize(gradient_direction, None, 0, 2*np.pi, cv2.NORM_MINMAX)
-
-        # Return as ui  nt8 for further processing
-        return gradient_magnitude.astype(np.uint8), gradient_direction
-       
     def load_brush(self, image_path, size):
-        print("Loading brush")
+        print("Loading brush, path:", image_path, 'size:', size)
         images = []
         original_image = Image.open(image_path).convert("RGBA") 
         
-        for i in range(0, 360, 30):
+        for i in range(0, 360, self.brush_angle):
             images.append(original_image.rotate(i))
 
-        for image, i in zip(images, range(0, 360, 30)):
+        for image, i in zip(images, range(0, 360, self.brush_angle)):
             image_array = np.array(image)
 
             rgb_array = image_array[:, :, :3]
@@ -102,32 +84,39 @@ class Paint:
                 cropped_array = rgb_array[x_min:x_max+1, y_min:y_max+1]
 
             cropped_image = Image.fromarray(cropped_array)
-            (width, height) = size
-            resized_image = cropped_image.resize((height, width), Image.Resampling.LANCZOS)
-            self.rotate[i] = self.rotate[i] + [np.array(resized_image)]
-        # self.brush = self.brush + [np.array(resized_image)]
+            resized_image = cropped_image.resize((size, size), Image.Resampling.LANCZOS)
+            
+            self.brushes[size][i] = self.brushes[size][i] + [np.array(resized_image)]
+            
+    def compute_gradient(self, color_buffer: np.ndarray):
+        sobel_x = np.zeros_like(color_buffer, dtype=np.float32)
+        sobel_y = np.zeros_like(color_buffer, dtype=np.float32)
+
+        for i in range(3): 
+            sobel_x[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 1, 0, ksize=5)
+            sobel_y[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 0, 1, ksize=5)
+
+        gradient_magnitude = np.sqrt(np.sum(sobel_x**2 + sobel_y**2, axis=2))
+        gradient_direction = np.arctan2(np.mean(sobel_y, axis=2), np.mean(sobel_x, axis=2))
+
+        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 40, cv2.NORM_MINMAX)
         
-    def get_angled_brush(self, x, y, angle_buffer: np.ndarray):
-        angle = round(((np.degrees(angle_buffer[x, y]) + 360) % 360) / 30) * 30
-        # print(np.degrees(angle_buffer[x, y]), angle)
+        return gradient_magnitude.astype(np.uint8), gradient_direction
+        
+    def get_angled_brush(self, x, y, size):
+        angle = round(((np.degrees(self.gradient_direction[x, y]) + 360) % 360) / self.brush_angle) * self.brush_angle
+        
+        if angle in [0,90,180,270]:
+            angle = angle + 90
+            
         if angle == 360:
             angle = 0
-            
-        if angle == 0:
-            angle = 90
-        elif angle == 90:
-            angle = 180
-        elif angle == 180:
-            angle = 270
-        elif angle == 270:
-            angle = 0
-            
-        # print("Angle: " , angle, angle_buffer[x, y])
-        return self.rotate[angle][np.random.randint(0,len(self.rotate[angle]))]
+        
+        return self.brushes[size][angle][np.random.randint(0,len(self.brushes[size][angle]))]
     
-    def paint_at_pixel(self, buff: np.ndarray, org_x, org_y, canvas: np.ndarray, angle_buffer: np.ndarray, use_gradient=False):
+    def paint_at_pixel(self, org_x, org_y, size, use_gradient=False):
         # Get the appropriate brush based on the angle
-        brush = self.get_angled_brush(org_x, org_y, angle_buffer)
+        brush = self.get_angled_brush(org_x, org_y, size)
         (target_x, target_y) = brush.shape[:2]
         
         start_x = max(org_x - target_x // 2, 0)
@@ -136,7 +125,10 @@ class Paint:
         end_y = min(org_y + target_y // 2, self.height)
         
         # Get the mean color of the region
-        region = buff[start_x:end_x, start_y:end_y]
+        if self.faded is not None:
+            region = self.faded[start_x:end_x, start_y:end_y]
+        else:
+            region = self.buff[start_x:end_x, start_y:end_y]
         mean_color = region.mean(axis=(0, 1))
         
         # Paint the region
@@ -152,32 +144,32 @@ class Paint:
                 
                 # Apply either gradient or standard painting logic
                 if use_gradient:
-                    canvas[x, y] = (1 - brush_alpha) * canvas[x, y] + brush_alpha * mean_color
+                    self.canvas[x, y] = (1 - brush_alpha) * self.canvas[x, y] + brush_alpha * mean_color
                     self.gradient_magnitude[x, y] = 0  # Mark as painted in gradient mode
                 else:
-                    canvas[x, y] = mean_color
+                    self.canvas[x, y] = mean_color
                 
                 # Mark the pixel as painted
                 self.paint_coords[x, y] = 1
 
-
-    def is_filled_90_percent(self, threshold=1.0, fill_ratio=0.999):
+    def is_filled_paint_coords(self, fill_ratio, threshold=1.0):
         total_pixels = self.paint_coords.size
         filled_pixels = np.count_nonzero(self.paint_coords >= threshold)
-        print(filled_pixels / total_pixels)
-        return filled_pixels / total_pixels >= fill_ratio
+        print(f'Filled pixels: {((filled_pixels / total_pixels)) * 100:.2f}%')
+        return (filled_pixels / total_pixels) >= fill_ratio
+    
+        # print(f'Filled pixels: {filled_pixels/total_pixels * 100:.2f}%')
+        # return filled_pixels / total_pixels >= fill_ratio
 
-    def is_filled_color_gradient_magnitude(self, threshold=1.0, fill_ratio=0.999):
+    def is_filled_gradient_magnitude(self, fill_ratio, threshold=1.0):
         total_pixels = self.gradient_magnitude.size
         filled_pixels = np.count_nonzero(self.gradient_magnitude >= threshold)
+        print(f'Filled pixels: {(1-(filled_pixels / total_pixels)) * 100:.2f}%')
         return 1-(filled_pixels / total_pixels) >= fill_ratio
-
-
 
     def paint_random_pixel_of_100x100(self, row, col, size=100, samples_per_block=10):
         block = self.paint_coords[row:row + size, col:col + size]
-        mask = block == 0 
-        indices = np.argwhere(mask)
+        indices = np.argwhere(block == 0)
 
         if len(indices) >= samples_per_block:
             random_indices = indices[np.random.choice(len(indices), size=samples_per_block, replace=False)]
@@ -198,4 +190,51 @@ class Paint:
         # Randomly sample pixels
         random_indices = indices[np.random.choice(len(indices), size=min(samples, len(indices)), replace=False)]
         return random_indices.tolist()
+
+    def paint_on_canvas(self, buff:np.ndarray, bg_color, faded:np.ndarray=None, phong_buffer:np.ndarray=None, paint_coords:np.ndarray=None):
+        # initialize the buffers
+        self.buff = buff
+        self.set_canvas(bg_color)
+        self.set_paint_coords(paint_coords)
+        self.faded=faded
+        
+        # sobel filter objects
+        if phong_buffer is not None:
+            gradient_magnitude, self.gradient_direction = self.compute_gradient(phong_buffer)
+        else:
+            gradient_magnitude, self.gradient_direction = self.compute_gradient(buff)
+        self.set_gradient_magnitude(gradient_magnitude)
+        
+        
+        fill = [0.98, 0.8, 0.7]
+        
+        print('Painting')
+        for brush_size, ratio in zip(self.brush_long, fill):
+            print(f'Painting with brush size: {brush_size}, Fill: {ratio * 100:.2f}%')
+            small_box_width = self.width//100
+            small_box_height = self.height//100
+            
+            while not self.is_filled_paint_coords(ratio):
+                for i in range(0, small_box_width):
+                    for j in range(0, small_box_height):
+                        random_indices = self.paint_random_pixel_of_100x100(i*100, j*100)
+                        for x, y in random_indices:
+                            self.paint_at_pixel(x, y, brush_size)
+                        
+                
+    
+            self.set_paint_coords(paint_coords)
+            
+            
+        fill = [0.98, 0.97, 0.95]
+        print('Gradient')
+        for brush_size, ratio in zip(self.brush_short, fill):    
+            while not self.is_filled_gradient_magnitude(fill_ratio=ratio):
+                random_indices = self.paint_random_pixel_of_gradient_magnitude()
+                for x, y in random_indices:
+                    self.paint_at_pixel(x, y, brush_size, use_gradient=True) 
+            self.set_gradient_magnitude(gradient_magnitude)
+            
+            
+        return self.canvas    
         

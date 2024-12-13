@@ -37,7 +37,7 @@ class Renderer:
         buff = np.full((self.screen.width, self.screen.height, 3), bg_color, dtype=np.uint8)
         canvas = np.full((self.screen.width, self.screen.height, 3), (225,225,225), dtype=np.uint8)
         z_buffer = np.full((self.screen.width, self.screen.height), -np.inf, dtype=np.float64)
-        faded = np.full((self.screen.width, self.screen.height, 3), (0,0,0), dtype=np.float32)
+        faded = np.full((self.screen.width, self.screen.height, 3), bg_color, dtype=np.float32)
         depth_buffer = np.full((self.screen.width, self.screen.height, 3), (0,0,0), dtype=np.uint8)
         canvas = np.full((self.screen.width, self.screen.height, 3), bg_color, dtype=np.uint8)
         
@@ -113,59 +113,7 @@ class Renderer:
                                 depth_buffer[x, y] = np.clip(255 * (z), 0, 255)
                                 
         
-        color_gradient_magnitude, color_gradient_direcion = self.paint.compute_color_gradient(buff)
-
-        paint_size = [(60, 60),(40, 40),(20, 20)]
-        fill = [0.98, 0.8, 0.7, 0.5]
-        
-        for brush_size, ratio in zip(paint_size, fill):
-            # for brush_size in paint_size:
-            self.paint.initialize_paint_coords()
-            self.paint.load_brush('brush/brush-5.png', brush_size)
-            self.paint.load_brush('brush/brush-6.png', brush_size)
-            self.paint.load_brush('brush/brush-7.png', brush_size)
-            self.paint.load_brush('brush/brush-8.png', brush_size)
-            self.paint.load_brush('brush/brush-9.png', brush_size)
-            self.paint.load_brush('brush/brush-10.png', brush_size)
-            self.paint.load_brush('brush/brush-11.png', brush_size)
-            self.paint.load_brush('brush/brush-12.png', brush_size)
-            self.paint.load_brush('brush/brush-13.png', brush_size)
-            self.paint.load_brush('brush/brush-14.png', brush_size)
-            
-            small_box_width = self.screen.width//100
-            small_box_height = self.screen.height//100
-            while not self.paint.is_filled_90_percent(fill_ratio=ratio):
-                for i in range(0, small_box_width):
-                    for j in range(0, small_box_height):
-                        random_indices = self.paint.paint_random_pixel_of_100x100(i*100, j*100)
-                        # print(random_indices)
-                        for x, y in random_indices:
-                            self.paint.paint_at_pixel(buff, x, y, canvas, color_gradient_direcion)
-            
-        
-        paint_size = [(20, 20), (10, 10)]
-        fill = [0.999, 0.98]
-        for brush_size, ratio in zip(paint_size, fill):
-            # for brush_size in paint_size:
-            print("gradient")
-            self.paint.initialize_paint_coords()
-            self.paint.initialize_gradient_magnitude(color_gradient_magnitude)
-            self.paint.load_brush('brush/brush-5.png', brush_size)
-            self.paint.load_brush('brush/brush-6.png', brush_size)
-            self.paint.load_brush('brush/brush-7.png', brush_size)
-            self.paint.load_brush('brush/brush-8.png', brush_size)
-            self.paint.load_brush('brush/brush-10.png', brush_size)
-            self.paint.load_brush('brush/brush-11.png', brush_size)
-            self.paint.load_brush('brush/brush-12.png', brush_size)
-            self.paint.load_brush('brush/brush-13.png', brush_size)
-            self.paint.load_brush('brush/brush-14.png', brush_size)
-            
-            while not self.paint.is_filled_color_gradient_magnitude(fill_ratio=ratio):
-                random_indices = self.paint.paint_random_pixel_of_gradient_magnitude()
-                for x, y in random_indices:
-                    self.paint.paint_at_pixel(buff, x, y, canvas, color_gradient_direcion, use_gradient=True)
-
                 
-        self.screen.draw(canvas)
+        self.screen.draw(self.paint.paint_on_canvas(buff, bg_color, faded=faded))
         
         
