@@ -35,11 +35,8 @@ class Renderer:
         
         # Create the buffer with background color
         buff = np.full((self.screen.width, self.screen.height, 3), bg_color, dtype=np.uint8)
-        canvas = np.full((self.screen.width, self.screen.height, 3), (225,225,225), dtype=np.uint8)
         z_buffer = np.full((self.screen.width, self.screen.height), -np.inf, dtype=np.float64)
         faded = np.full((self.screen.width, self.screen.height, 3), bg_color, dtype=np.float32)
-        depth_buffer = np.full((self.screen.width, self.screen.height, 3), (0,0,0), dtype=np.uint8)
-        canvas = np.full((self.screen.width, self.screen.height, 3), bg_color, dtype=np.uint8)
         
         for mesh in self.mesh_list:
             for (n1, n2, n3), i in zip(mesh.faces, range(len(mesh.faces))):
@@ -96,21 +93,22 @@ class Renderer:
                                 specular = (_specular * max(R.dot(V), 0) ** mesh.ke)
                                 
                                 # Final color including ambient, diffuse, and specular
-                                depth = min(np.clip(255 * (z), 0, 255)/225 + 0.5, 1.0)
+                                depth = min(np.clip(255 * (z), 0, 255)/225 + 0.7, 1.0)
                                 fade_color = np.array(bg_color) # Fading toward white
+                                shadow_tint = diffuse.to_array() * 255 * 0.8
+                                shadow_intensity = max(0, 1 - L.dot(N)) *0.3
 
                                 color = np.clip((ambient + diffuse + specular).to_array(), 0, 1) * 255
+                                color = (1 - shadow_intensity) * color + shadow_intensity * shadow_tint
                                 
-                                fade_weight = 0.8
+                                fade_weight = 0.9
                                 faded_color = (1 - depth * fade_weight) * fade_color + (depth * fade_weight) * color
-                                canvas_color = (_diffuse * (1 / np.pi) * (self.light.intensity / (d ** 2))).to_array() * 255
-                                canvas_fade = (1 - depth * fade_weight) * fade_color + (depth * fade_weight) * canvas_color
+
+                                
                                 
                                 buff[x, y] = color 
                                 faded[x, y] = faded_color
-                                canvas[x,y] = canvas_fade
                                 z_buffer[x, y] = z
-                                depth_buffer[x, y] = np.clip(255 * (z), 0, 255)
                                 
         
                 

@@ -12,13 +12,13 @@ class Paint:
     
     def set_up_palette(self):
         # type = { size: {angle: [brushes]}}
-        self.brush_angle = 15
+        self.brush_angle = 30
         self.brushes = {}
         
-        self.brush_long = [60, 40, 20]
-        self.brush_short= [20, 10]
+        self.brush_long = [60,40,20]
+        self.brush_short= [20,10]
         
-        brush_size=[60, 40, 20, 10]
+        brush_size=[60,40,20,10]
         
         brush_paths = [
             'brush/brush-5.png', 
@@ -194,9 +194,9 @@ class Paint:
     def paint_on_canvas(self, buff:np.ndarray, bg_color, faded:np.ndarray=None, phong_buffer:np.ndarray=None, paint_coords:np.ndarray=None):
         # initialize the buffers
         self.buff = buff
+        self.faded = faded
         self.set_canvas(bg_color)
         self.set_paint_coords(paint_coords)
-        self.faded=faded
         
         # sobel filter objects
         if phong_buffer is not None:
@@ -204,6 +204,8 @@ class Paint:
         else:
             gradient_magnitude, self.gradient_direction = self.compute_gradient(buff)
         self.set_gradient_magnitude(gradient_magnitude)
+        
+        
         
         
         fill = [0.98, 0.8, 0.7]
@@ -226,7 +228,7 @@ class Paint:
             self.set_paint_coords(paint_coords)
             
             
-        fill = [0.98, 0.97, 0.95]
+        fill = [0.98, 0.97, 0.7]
         print('Gradient')
         for brush_size, ratio in zip(self.brush_short, fill):    
             while not self.is_filled_gradient_magnitude(fill_ratio=ratio):
