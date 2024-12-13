@@ -20,8 +20,9 @@ class Renderer:
 
         # Initialize image and depth buffers
         image_buffer = np.full((height, width, 3), bg_color, dtype=np.uint8)
-        phong_buffer = np.full((height, width, 3), bg_color, dtype=np.uint8)
         paint_coords = np.full((height, width), 1, dtype=np.uint8)
+        phong_buffer = np.full((height, width, 3), bg_color, dtype=np.uint8)
+        faded_buffer = np.full((height, width, 3), bg_color, dtype=np.uint8)
         depth_buffer = np.full((height, width), -np.inf, dtype=np.float32)
         
         for mesh in self.meshes:
@@ -90,24 +91,22 @@ class Renderer:
                                 blend_factor = 0.5
                                 blended_color = (blend_factor * shading_color + (1 - blend_factor) * texture_color).astype(np.uint8)
 
-                                # Apply the blended color to the image buffer
+                              
+                                z = min(np.clip(255 * (depth), 0, 255)/225 + 0.7, 1.0)
+
+                                fade_weight = 0.9
+                                faded_color = (1 - z * fade_weight) * np.array(bg_color) + (z * fade_weight) * blended_color
+
+                                
+                                  # Apply the blended color to the image buffer
                                 image_buffer[y, x] = np.clip(blended_color, 0, 255)
                                 phong_buffer[y, x] = shading_color
+                                faded_buffer[y, x] = faded_color
                                 paint_coords[y, x] = 0
-                                # fade_color = np.array(bg_color) # Fading toward white
-
- 
-                                # fade_weight = 0.8
-                                # faded_color = (1 - depth * fade_weight) * fade_color + (depth * fade_weight) * blended_color
-                                # # canvas_color = (_diffuse * (1 / np.pi) * (self.light.intensity / (d ** 2))).to_array() * 255
-                                # canvas_fade = (1 - depth * fade_weight) * fade_color + (depth * fade_weight) * canvas_color
-                                
-
-                                # canvas[x,y] = canvas_fade
         
                 
         # self.screen.draw(paint.canvas)
-        self.screen.draw(self.paint.paint_on_canvas(image_buffer, bg_color, phong_buffer))
+        self.screen.draw(self.paint.paint_on_canvas(image_buffer, bg_color, faded_buffer=faded_buffer,phong_buffer=phong_buffer, paint_coords=paint_coords))
 
     def camera_space_to_screen_space(self, pt, triangle_verts, triangle_camera_verts):
         # Barycentric interpolation for camera-space mapping to screen space

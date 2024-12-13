@@ -15,22 +15,27 @@ class Paint:
         self.brush_angle = 30
         self.brushes = {}
         
-        self.brush_long = [60, 40 ,20]
-        self.brush_short= [20, 10]
+        self.brush_long = [60]
+        self.brush_short= []
         
-        brush_size=[60, 40, 20, 10]
+        brush_size=[60]
+        
+        # self.brush_long = [60, 40 ,20]
+        # self.brush_short= [20, 10]
+        
+        # brush_size=[60, 40, 20, 10]
         
         brush_paths = [
             'brush/brush-5.png', 
-            'brush/brush-6.png',
-            'brush/brush-7.png',
-            'brush/brush-8.png',
-            'brush/brush-9.png',
-            'brush/brush-10.png',
-            'brush/brush-11.png',
-            'brush/brush-12.png',
-            'brush/brush-13.png',
-            'brush/brush-14.png', 
+            # 'brush/brush-6.png',
+            # 'brush/brush-7.png',
+            # 'brush/brush-8.png',
+            # 'brush/brush-9.png',
+            # 'brush/brush-10.png',
+            # 'brush/brush-11.png',
+            # 'brush/brush-12.png',
+            # 'brush/brush-13.png',
+            # 'brush/brush-14.png', 
                        ]
         
         for size in brush_size:
@@ -125,7 +130,10 @@ class Paint:
         end_y = min(org_y + target_y // 2, self.height)
         
         # Get the mean color of the region
-        region = self.buff[start_x:end_x, start_y:end_y]
+        if self.faded_buffer is not None:
+            region = self.faded_buffer[start_x:end_x, start_y:end_y]
+        else:
+            region = self.buff[start_x:end_x, start_y:end_y]
         mean_color = region.mean(axis=(0, 1))
         
         # Paint the region
@@ -188,14 +196,19 @@ class Paint:
         random_indices = indices[np.random.choice(len(indices), size=min(samples, len(indices)), replace=False)]
         return random_indices.tolist()
 
-    def paint_on_canvas(self, buff:np.ndarray, bg_color, phong_buffer:np.ndarray, paint_coords:np.ndarray=None):
+    def paint_on_canvas(self, buff:np.ndarray, bg_color, faded_buffer:np.ndarray=None,  phong_buffer:np.ndarray=None, paint_coords:np.ndarray=None):
         # initialize the buffers
         self.buff = buff
         self.set_canvas(bg_color)
         self.set_paint_coords(paint_coords)
+        self.faded_buffer=faded_buffer
         
         # sobel filter objects
-        gradient_magnitude, self.gradient_direction = self.compute_gradient(phong_buffer)
+        if phong_buffer is not None:
+            gradient_magnitude, self.gradient_direction = self.compute_gradient(phong_buffer)
+        else :
+            gradient_magnitude, self.gradient_direction = self.compute_gradient(buff)
+        
         self.set_gradient_magnitude(gradient_magnitude)
         
         
