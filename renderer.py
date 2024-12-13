@@ -21,7 +21,7 @@ class Renderer:
         # Initialize image and depth buffers
         image_buffer = np.full((height, width, 3), bg_color, dtype=np.uint8)
         phong_buffer = np.full((height, width, 3), bg_color, dtype=np.uint8)
-        paint_coords = np.zeros((height, width), dtype=np.uint8)
+        paint_coords = np.full((height, width), 1, dtype=np.uint8)
         depth_buffer = np.full((height, width), -np.inf, dtype=np.float32)
         
         for mesh in self.meshes:
@@ -92,7 +92,7 @@ class Renderer:
                                 # Apply the blended color to the image buffer
                                 image_buffer[y, x] = np.clip(blended_color, 0, 255)
                                 phong_buffer[y, x] = shading_color
-                                paint_coords[y, x] = 1
+                                paint_coords[y, x] = 0
                                 # fade_color = np.array(bg_color) # Fading toward white
 
  
@@ -105,7 +105,7 @@ class Renderer:
         
                 
         # self.screen.draw(paint.canvas)
-        self.screen.draw(self.paint.paint_on_canvas(image_buffer, bg_color, phong_buffer, paint_coords))
+        self.screen.draw(self.paint.paint_on_canvas(image_buffer, bg_color, phong_buffer))
 
     def camera_space_to_screen_space(self, pt, triangle_verts, triangle_camera_verts):
         # Barycentric interpolation for camera-space mapping to screen space

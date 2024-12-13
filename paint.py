@@ -12,13 +12,13 @@ class Paint:
     
     def set_up_palette(self):
         # type = { size: {angle: [brushes]}}
-        self.brush_angle = 15
+        self.brush_angle = 30
         self.brushes = {}
         
         self.brush_long = [60, 40 ,20]
-        self.brush_short= [20, 10, 5]
+        self.brush_short= [20, 10]
         
-        brush_size=[60, 40, 20, 10, 5]
+        brush_size=[60, 40, 20, 10]
         
         brush_paths = [
             'brush/brush-5.png', 
@@ -49,7 +49,7 @@ class Paint:
         if paint_coords is not None:
             self.paint_coords = paint_coords
         else:
-            self.paint_coords = np.full((self.width, self.height), 1, dtype=np.uint8)
+            self.paint_coords = np.zeros((self.width, self.height), dtype=np.uint8)
         
     def set_gradient_magnitude(self, gradient_magnitude: np.ndarray):
         self.gradient_magnitude = gradient_magnitude.copy()
@@ -147,13 +147,13 @@ class Paint:
                     self.canvas[x, y] = mean_color
                 
                 # Mark the pixel as painted
-                self.paint_coords[x, y] = 0
+                self.paint_coords[x, y] = 1
 
     def is_filled_paint_coords(self, fill_ratio, threshold=1.0):
         total_pixels = self.paint_coords.size
         filled_pixels = np.count_nonzero(self.paint_coords >= threshold)
-        print(f'Filled pixels: {1-((filled_pixels / total_pixels)) * 100:.2f}%')
-        return 1-(filled_pixels / total_pixels) >= fill_ratio
+        print(f'Filled pixels: {((filled_pixels / total_pixels)) * 100:.2f}%')
+        return (filled_pixels / total_pixels) >= fill_ratio
     
         # print(f'Filled pixels: {filled_pixels/total_pixels * 100:.2f}%')
         # return filled_pixels / total_pixels >= fill_ratio
@@ -167,7 +167,7 @@ class Paint:
 
     def paint_random_pixel_of_100x100(self, row, col, size=100, samples_per_block=10):
         block = self.paint_coords[row:row + size, col:col + size]
-        indices = np.argwhere(block == 1)
+        indices = np.argwhere(block == 0)
 
         if len(indices) >= samples_per_block:
             random_indices = indices[np.random.choice(len(indices), size=samples_per_block, replace=False)]
