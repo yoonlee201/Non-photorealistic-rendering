@@ -59,6 +59,7 @@ class Renderer:
                 max_x = min(width - 1, int(max(x for x, y in triangle_verts)))
                 min_y = max(0, int(min(y for x, y in triangle_verts)))
                 max_y = min(height - 1, int(max(y for x, y in triangle_verts)))
+
                 for x in range(min_x, max_x + 1):
                     for y in range(min_y, max_y + 1):
                         if self.is_point_in_triangle((x, y), triangle_verts):
@@ -101,6 +102,7 @@ class Renderer:
                                 # # canvas_color = (_diffuse * (1 / np.pi) * (self.light.intensity / (d ** 2))).to_array() * 255
                                 # canvas_fade = (1 - depth * fade_weight) * fade_color + (depth * fade_weight) * canvas_color
                                 
+
                                 # canvas[x,y] = canvas_fade
         
                 

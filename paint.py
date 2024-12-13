@@ -161,7 +161,6 @@ class Paint:
     def is_filled_gradient_magnitude(self, fill_ratio, threshold=1.0):
         total_pixels = self.gradient_magnitude.size
         filled_pixels = np.count_nonzero(self.gradient_magnitude >= threshold)
-        
         print(f'Filled pixels: {(1-(filled_pixels / total_pixels)) * 100:.2f}%')
         return 1-(filled_pixels / total_pixels) >= fill_ratio
 
