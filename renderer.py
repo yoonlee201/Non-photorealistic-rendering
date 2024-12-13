@@ -8,20 +8,21 @@ from paint import Paint
 
 np.set_printoptions(precision=16, suppress=True)
 class Renderer:
-    def __init__(self, screen, camera, meshes, light):
+    def __init__(self, screen, camera, meshes, light, paint):
         self.screen = screen
         self.camera = camera
         self.meshes = meshes
         self.light = light
-        self.paint = Paint(self.screen.get_width(), self.screen.get_height())
+        self.paint = paint
 
     def render(self, bg_color, ambient_light):
         height, width = self.screen.get_height(), self.screen.get_width()
 
         # Initialize image and depth buffers
         image_buffer = np.full((height, width, 3), bg_color, dtype=np.uint8)
+        phong_buffer = np.full((height, width, 3), bg_color, dtype=np.uint8)
+        paint_coords = np.zeros((height, width), dtype=np.uint8)
         depth_buffer = np.full((height, width), -np.inf, dtype=np.float32)
-        canvas = np.full((height, width, 3), bg_color, dtype=np.uint8)
         
         for mesh in self.meshes:
             # Transform vertices into camera space and project to screen space
@@ -90,7 +91,8 @@ class Renderer:
 
                                 # Apply the blended color to the image buffer
                                 image_buffer[y, x] = np.clip(blended_color, 0, 255)
-                                
+                                phong_buffer[y, x] = shading_color
+                                paint_coords[y, x] = 1
                                 # fade_color = np.array(bg_color) # Fading toward white
 
  
@@ -101,61 +103,9 @@ class Renderer:
                                 
                                 # canvas[x,y] = canvas_fade
         
-        color_gradient_magnitude, color_gradient_direcion = self.paint.compute_color_gradient(image_buffer)
-
-        paint_size = [(60, 60),(40, 40),(20, 20)]
-        fill = [0.98, 0.8, 0.7, 0.5]
-        
-        for brush_size, ratio in zip(paint_size, fill):
-            # for brush_size in paint_size:
-            self.paint.initialize_paint_coords()
-            self.paint.load_brush('brush/brush-5.png', brush_size)
-            self.paint.load_brush('brush/brush-6.png', brush_size)
-            self.paint.load_brush('brush/brush-7.png', brush_size)
-            self.paint.load_brush('brush/brush-8.png', brush_size)
-            self.paint.load_brush('brush/brush-9.png', brush_size)
-            self.paint.load_brush('brush/brush-10.png', brush_size)
-            self.paint.load_brush('brush/brush-11.png', brush_size)
-            self.paint.load_brush('brush/brush-12.png', brush_size)
-            self.paint.load_brush('brush/brush-13.png', brush_size)
-            self.paint.load_brush('brush/brush-14.png', brush_size)
-            
-            small_box_width = self.screen.get_width()//100
-            small_box_height = self.screen.get_height()//100
-            while not self.paint.is_filled_90_percent(fill_ratio=ratio):
-                for i in range(0, small_box_width):
-                    for j in range(0, small_box_height):
-                        random_indices = self.paint.paint_random_pixel_of_100x100(i*100, j*100)
-                        # print(random_indices)
-                        for x, y in random_indices:
-                            self.paint.paint_at_pixel(image_buffer, x, y, canvas, color_gradient_direcion)
-            
-        
-        paint_size = [(20, 20), (10, 10)]
-        fill = [0.999, 0.98]
-        for brush_size, ratio in zip(paint_size, fill):
-            # for brush_size in paint_size:
-            print("gradient")
-            self.paint.initialize_paint_coords()
-            self.paint.initialize_gradient_magnitude(color_gradient_magnitude)
-            self.paint.load_brush('brush/brush-5.png', brush_size)
-            self.paint.load_brush('brush/brush-6.png', brush_size)
-            self.paint.load_brush('brush/brush-7.png', brush_size)
-            self.paint.load_brush('brush/brush-8.png', brush_size)
-            self.paint.load_brush('brush/brush-10.png', brush_size)
-            self.paint.load_brush('brush/brush-11.png', brush_size)
-            self.paint.load_brush('brush/brush-12.png', brush_size)
-            self.paint.load_brush('brush/brush-13.png', brush_size)
-            self.paint.load_brush('brush/brush-14.png', brush_size)
-            
-            while not self.paint.is_filled_color_gradient_magnitude(fill_ratio=ratio):
-                random_indices = self.paint.paint_random_pixel_of_gradient_magnitude()
-                for x, y in random_indices:
-                    self.paint.paint_at_pixel(image_buffer, x, y, canvas, color_gradient_direcion, use_gradient=True)
-
                 
-        self.screen.draw(canvas)
-        # self.screen.draw(image_buffer)
+        # self.screen.draw(paint.canvas)
+        self.screen.draw(self.paint.paint_on_canvas(image_buffer, bg_color, phong_buffer, paint_coords))
 
     def camera_space_to_screen_space(self, pt, triangle_verts, triangle_camera_verts):
         # Barycentric interpolation for camera-space mapping to screen space

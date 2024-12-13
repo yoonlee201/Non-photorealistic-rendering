@@ -4,6 +4,7 @@ from camera import PerspectiveCamera
 from mesh import Mesh
 from renderer import Renderer
 from light import PointLight
+from paint import Paint
 import pygame
 
 
@@ -19,8 +20,10 @@ def setup_scene(screen):
 
     light = PointLight(50.0, np.array([1, 1, 1]))
     light.transform.set_position(0, 5, 5)
+    
+    paint = Paint(screen.get_width(), screen.get_height())
 
-    renderer = Renderer(screen, camera, [mesh], light)
+    renderer = Renderer(screen, camera, [mesh], light, paint)
 
     return camera, mesh, light, renderer
 
@@ -42,7 +45,7 @@ if __name__ == '__main__':
     # Render views with increasing y-axis rotation
     for i in range(36):
         rotation = (15, i * 10, 0)
-        filename = f"view{i+1}.png"
+        filename = f"first_render/view{i+1}.png"
         render_view(renderer, mesh, rotation, filename)
 
     print("Rendering complete. Images saved as view1.png to view14.png.")
