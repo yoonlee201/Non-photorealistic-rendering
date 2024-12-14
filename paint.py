@@ -15,27 +15,22 @@ class Paint:
         self.brush_angle = 30
         self.brushes = {}
         
-        self.brush_long = [60]
-        self.brush_short= []
+        self.brush_long = [60, 40 ,20]
+        self.brush_short= [20, 10]
         
-        brush_size=[60]
-        
-        # self.brush_long = [60, 40 ,20]
-        # self.brush_short= [20, 10]
-        
-        # brush_size=[60, 40, 20, 10]
+        brush_size=[60, 40, 20, 10]
         
         brush_paths = [
             'brush/brush-5.png', 
-            # 'brush/brush-6.png',
-            # 'brush/brush-7.png',
-            # 'brush/brush-8.png',
-            # 'brush/brush-9.png',
-            # 'brush/brush-10.png',
-            # 'brush/brush-11.png',
-            # 'brush/brush-12.png',
-            # 'brush/brush-13.png',
-            # 'brush/brush-14.png', 
+            'brush/brush-6.png',
+            'brush/brush-7.png',
+            'brush/brush-8.png',
+            'brush/brush-9.png',
+            'brush/brush-10.png',
+            'brush/brush-11.png',
+            'brush/brush-12.png',
+            'brush/brush-13.png',
+            'brush/brush-14.png', 
                        ]
         
         for size in brush_size:
@@ -98,13 +93,13 @@ class Paint:
         sobel_y = np.zeros_like(color_buffer, dtype=np.float32)
 
         for i in range(3): 
-            sobel_x[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 1, 0, ksize=5)
-            sobel_y[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 0, 1, ksize=5)
+            sobel_x[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 1, 0, ksize=3)
+            sobel_y[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 0, 1, ksize=3)
 
         gradient_magnitude = np.sqrt(np.sum(sobel_x**2 + sobel_y**2, axis=2))
         gradient_direction = np.arctan2(np.mean(sobel_y, axis=2), np.mean(sobel_x, axis=2))
 
-        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 40, cv2.NORM_MINMAX)
+        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 100, cv2.NORM_MINMAX)
         
         return gradient_magnitude.astype(np.uint8), gradient_direction
         
@@ -214,7 +209,7 @@ class Paint:
         
         
         
-        fill = [0.98, 0.8, 0.7]
+        fill = [0.98, 0.7, 0.5]
         
         print('Painting')
         for brush_size, ratio in zip(self.brush_long, fill):
@@ -234,7 +229,7 @@ class Paint:
             self.set_paint_coords(paint_coords)
             
             
-        fill = [0.98, 0.97, 0.7]
+        fill = [0.99, 0.97]
         print('Gradient')
         for brush_size, ratio in zip(self.brush_short, fill):    
             while not self.is_filled_gradient_magnitude(fill_ratio=ratio):

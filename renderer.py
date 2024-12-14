@@ -106,7 +106,8 @@ class Renderer:
         
                 
         # self.screen.draw(paint.canvas)
-        self.screen.draw(self.paint.paint_on_canvas(image_buffer, bg_color, faded_buffer=faded_buffer,phong_buffer=phong_buffer, paint_coords=paint_coords))
+        # self.screen.draw(self.paint.paint_on_canvas(image_buffer, bg_color, faded_buffer=faded_buffer,phong_buffer=phong_buffer, paint_coords=paint_coords))
+        self.screen.draw(self.paint.paint_on_canvas(image_buffer, bg_color, phong_buffer=phong_buffer))
 
     def camera_space_to_screen_space(self, pt, triangle_verts, triangle_camera_verts):
         # Barycentric interpolation for camera-space mapping to screen space
