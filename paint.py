@@ -16,6 +16,7 @@ class Paint:
         self.brushes = {}
         
         self.brush_long = [60, 40 ,20]
+        # self.brush_short= []
         self.brush_short= [20, 10]
         
         brush_size=[60, 40, 20, 10]
@@ -209,7 +210,7 @@ class Paint:
         
         
         
-        fill = [0.98, 0.7, 0.5]
+        fill = [0.98, 0.8, 0.5]
         
         print('Painting')
         for brush_size, ratio in zip(self.brush_long, fill):
@@ -229,7 +230,7 @@ class Paint:
             self.set_paint_coords(paint_coords)
             
             
-        fill = [0.99, 0.97]
+        fill = [0.98, 0.8, 0.7]
         print('Gradient')
         for brush_size, ratio in zip(self.brush_short, fill):    
             while not self.is_filled_gradient_magnitude(fill_ratio=ratio):
