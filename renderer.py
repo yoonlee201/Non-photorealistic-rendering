@@ -1,226 +1,191 @@
 import numpy as np
 from screen import Screen
-from typing import List, Tuple
-from vector import Vector3
-from camera import Camera
 from mesh import Mesh
-from light import Light
-from PIL import Image
+from transform import Transform
+from camera import OrthoCamera, PerspectiveCamera
+from light import PointLight
 from paint import Paint
-import math
-import cv2
 
+np.set_printoptions(precision=16, suppress=True)
 class Renderer:
-    def __init__(self, screen: Screen, camera: Camera, mesh_list: List[Mesh], light: Light):
+    def __init__(self, screen, camera, meshes, light, paint):
         self.screen = screen
         self.camera = camera
-        self.mesh_list = mesh_list
+        self.meshes = meshes
         self.light = light
-        self.paint = Paint(self.screen.width, self.screen.height)
+        self.paint = paint
 
-    def compute_color_gradient(self, color_buffer: np.ndarray) -> np.ndarray:
-        # Calculate Sobel gradients for each channel (R, G, B)
-        sobel_x = np.zeros_like(color_buffer, dtype=np.float32)
-        sobel_y = np.zeros_like(color_buffer, dtype=np.float32)
+    def render(self, bg_color, ambient_light):
+        height, width = self.screen.get_height(), self.screen.get_width()
 
-        for i in range(3):  # For each color channel (R, G, B)
-            sobel_x[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 1, 0, ksize=3)
-            sobel_y[:, :, i] = cv2.Sobel(color_buffer[:, :, i], cv2.CV_64F, 0, 1, ksize=3)
-
-        # Compute gradient magnitude and direction
-        gradient_magnitude = np.sqrt(np.sum(sobel_x**2 + sobel_y**2, axis=2))
-        gradient_direction = np.arctan2(np.mean(sobel_y, axis=2), np.mean(sobel_x, axis=2))
-
-        # Normalize gradient magnitude for visualization
-        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 25, cv2.NORM_MINMAX)
-
-        # Return as uint8 for further processing
-        return gradient_magnitude.astype(np.uint8), gradient_direction
-    
-    def compute_depth_gradient(self, z_buffer: np.ndarray):
-        # Calculate Sobel gradients in X and Y directions
-        gray_img = cv2.cvtColor(z_buffer, cv2.COLOR_BGR2GRAY)
-        sobel_x = cv2.Sobel(gray_img, cv2.CV_64F, 1, 0, ksize=5)  # Gradient in X direction
-        sobel_y = cv2.Sobel(gray_img, cv2.CV_64F, 0, 1, ksize=5)  # Gradient in Y direction
-
-        # Compute gradient magnitude
-        gradient_magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
-        gradient_direction = np.arctan2(sobel_y, sobel_x) * 180 / np.pi
-
-        # Normalize the gradient for visualization
-        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 255, cv2.NORM_MINMAX)
-        gradient_direction = cv2.normalize(gradient_direction, None, 0, 360, cv2.NORM_MINMAX)
-        return gradient_magnitude.astype(np.uint8), gradient_direction.astype(np.uint8)
-    
-    def compute_normal_gradient(self, normal_buffer: np.ndarray) -> np.ndarray:
-        # Calculate gradients for each normal component
-        sobel_x = np.zeros_like(normal_buffer, dtype=np.float32)
-        sobel_y = np.zeros_like(normal_buffer, dtype=np.float32)
-
-        for i in range(3):  # For each component (x, y, z)
-            sobel_x[:, :, i] = cv2.Sobel(normal_buffer[:, :, i], cv2.CV_64F, 1, 0, ksize=3)
-            sobel_y[:, :, i] = cv2.Sobel(normal_buffer[:, :, i], cv2.CV_64F, 0, 1, ksize=3)
-
-        # Combine gradients to calculate magnitude
-        gradient_magnitude = np.sqrt(np.sum(sobel_x**2 + sobel_y**2, axis=2))
-
-        # Normalize for visualization
-        gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 255, cv2.NORM_MINMAX)
-        return gradient_magnitude.astype(np.uint8)
-
-
-    def render(self, shading, bg_color, ambient_light):
-        def barycentric(p, a, b, c):
-            (x, y), (xa, ya), (xb, yb), (xc, yc) = p, a, b, c
-            denominator = (ya - yb) * (xc - xb) + (xb - xa) * (yc - yb)
+        # Initialize image and depth buffers
+        image_buffer = np.full((height, width, 3), bg_color, dtype=np.uint8)
+        paint_coords = np.full((height, width), 1, dtype=np.uint8)
+        phong_buffer = np.full((height, width, 3), bg_color, dtype=np.uint8)
+        faded_buffer = np.full((height, width, 3), bg_color, dtype=np.uint8)
+        depth_buffer = np.full((height, width), -np.inf, dtype=np.float32)
+        
+        for mesh in self.meshes:
+            # Transform vertices into camera space and project to screen space
+            verts_camera_coords = [
+                self.camera.project_point(mesh.transform.apply_to_point(v))
+                for v in mesh.verts
+            ]
             
-            if denominator == 0:
-                return False, 1, 1, 1
+            verts_screen_coords = [
+                ((-v[1] + 1) / 2 * width, ((-v[0] + 1) / 2) * height)
+                for v in verts_camera_coords
+            ]
             
-            alpha = ((yb - yc) * (x - xc) + (xc - xb) * (y - yc)) / denominator
-            beta = ((yc - ya) * (x - xc) + (xa - xc) * (y - yc)) / denominator
-            gamma = 1 - alpha - beta
-            return (alpha >= 0) and (beta >= 0) and (gamma >= 0), alpha, beta, gamma
-        
-        
-        # Create the buffer with background color
-        buff = np.full((self.screen.width, self.screen.height, 3), bg_color, dtype=np.uint8)
-        canvas = np.full((self.screen.width, self.screen.height, 3), (225,225,225), dtype=np.uint8)
-        z_buffer = np.full((self.screen.width, self.screen.height), -np.inf, dtype=np.float64)
-        normal_buffer = np.full((self.screen.width, self.screen.height, 3), (0,0,0), dtype=np.float32)
-        depth_buffer = np.full((self.screen.width, self.screen.height, 3), (0,0,0), dtype=np.uint8)
-        
-        for mesh in self.mesh_list:
-            for (n1, n2, n3), i in zip(mesh.faces, range(len(mesh.faces))):
-                triangle = [mesh.verts[n1], mesh.verts[n2], mesh.verts[n3]]
-                # vector to world coordinates
-                world_coords = [mesh.transform.apply_to_point(p) for p in triangle]
-                # world to camera coordinates
-                camera_coords = [self.camera.project_point(p) for p in world_coords]
-                
-                # camera to screen coordinates
-                view_coords = [self.screen.project_point(p) for p in camera_coords]
-                screen_coords = [(int(x), int(y)) for (x, y, _) in view_coords]
-                z_coords = [z for (_, _, z) in view_coords]
-                
-                # basic vectors for lighting
-                norm_vec  = mesh.transform.apply_to_normal(mesh.normals[i])
-                
-                point_light = self.light.transform.apply_to_point(Vector3(0, 0, 0))
-                
-                
-                ambient = Vector3.from_array(ambient_light)  * mesh.ka
-                _diffuse = self.light.apply_with_diffuse(Vector3.from_array(mesh.diffuse_color)) * mesh.kd
-                _specular = (Vector3.from_array(mesh.specular_color) * mesh.ks)
-                
-                # get bounds for the screen
-                min_x = max(min(v[0] for v in screen_coords), 0)
-                max_x = min(max(v[0] for v in screen_coords), self.screen.width - 1)
-                min_y = max(min(v[1] for v in screen_coords), 0)
-                max_y = min(max(v[1] for v in screen_coords), self.screen.height - 1)
-                
+            for face, normal in zip(mesh.faces, mesh.normals):
+                # Transform face normal into camera space
+                transformation_matrix = mesh.transform.transformation_matrix()
+                transformed_normal = np.linalg.inv(transformation_matrix[:3, :3]).T.dot(normal)
+                transformed_normal = transformed_normal / np.linalg.norm(transformed_normal)
+
+                # View direction
+                view_direction = np.array([0, 0, -1])
+
+                # Back-face culling
+                if np.dot(transformed_normal, view_direction) >= 0:
+                    continue
+
+                # Extract triangle vertices and project
+                triangle_verts = [verts_screen_coords[i] for i in face]
+                triangle_camera_verts = [verts_camera_coords[i] for i in face]
+                triangle_normals = [mesh.vertex_normals()[i] for i in face]
+
+                # Compute triangle bounding box
+                min_x = max(0, int(min(x for x, y in triangle_verts)))
+                max_x = min(width - 1, int(max(x for x, y in triangle_verts)))
+                min_y = max(0, int(min(y for x, y in triangle_verts)))
+                max_y = min(height - 1, int(max(y for x, y in triangle_verts)))
+
                 for x in range(min_x, max_x + 1):
                     for y in range(min_y, max_y + 1):
-                        
-                        check, alpha, beta, gamma = barycentric((x, y), *screen_coords)
-                        
-                        if check:
-                            z = (alpha * z_coords[0] + beta * z_coords[1] + gamma * z_coords[2]) 
-                            if z >= 0 and z > z_buffer[x, y]:
-                                p = self.screen.inverse_project_point(Vector3(x, y, z))
-                                frag_world = self.camera.inverse_project_point(p)
-                                light_vec = (point_light - frag_world)
-                                
-                                # Normalize the light direction and normal vectors
-                                L = light_vec.normalized()
-                                N = (mesh.vertes_normals[n1] * alpha + mesh.vertes_normals[n2] * beta + mesh.vertes_normals[n3] * gamma).normalized()
-                                
-                                # Diffuse reflection
-                                d = light_vec.magnitude()
-                                diffuse = (_diffuse * max(L.dot(N), 0)) * (1 / np.pi) * (self.light.intensity / (d ** 2))
-                                
-                                # Specular reflection
-                                V = (self.camera.get_view_vector() - frag_world).normalized()
-                                R = (L - N * 2 * L.dot(N)).normalized()  # Reflect L around N
-                                specular = (_specular * max(R.dot(V), 0) ** mesh.ke)
-                                
-                                # Final color including ambient, diffuse, and specular
-                                color = np.clip((ambient + diffuse + specular).to_array(), 0, 1) * 255
-                                buff[x, y] = color
-                                normal_buffer[x, y] = norm_vec.to_array()
-                                z_buffer[x, y] = z
-                                depth_buffer[x, y] = np.clip(255 * (z), 0, 255)
-               
-        # if shading == 'paint':
-            # Compute gradients
-        color_gradient_magnitude, color_gradient_direcion = self.compute_color_gradient(buff)
-        # print(color_gradient_magnitude,color_gradient_direcion.shape)  
-        # # Stack grayscale gradients into RGB format
-        # if len(color_gradient_magnitude.shape) == 2:
-        #     color_gradient_magnitude = np.stack((color_gradient_magnitude,) * 3, axis=-1)
-        # if len(color_gradient_direcion.shape) == 2:
-        #     color_gradient_direcion = np.stack((color_gradient_direcion,) * 3, axis=-1)
+                        if self.is_point_in_triangle((x, y), triangle_verts):
+                            depth = self.interpolate_depth((x, y), triangle_verts, triangle_camera_verts)
 
-        normal_image = ((normal_buffer + 1) / 2 * 255).astype(np.uint8)
-                                    
-        # el
-        canvas = np.full((self.screen.width, self.screen.height, 3), bg_color, dtype=np.uint8)
-    
-        paint_long_large = [(41, 21), (31, 11)]
-        paint_long_small = [(31, 7), (21, 7)]
-        paint_point_large = [(21, 21), (11, 11)]
-        paint_point_small = [(7, 7), (5, 5)]
-        fill = [0.9999, 0.7]
+                            if depth > depth_buffer[y, x]:
+                                depth_buffer[y, x] = depth
+                                light_position = self.light.transform.transformation_matrix()[:3, 3]
+                                light_dir = light_position - mesh.transform.transformation_matrix()[:3, 3]
+                                light_dir /= np.linalg.norm(light_dir)
+
+                                # Compute diffuse shading
+                                diffuse_intensity = max(np.dot(transformed_normal, light_dir), 0) / np.pi
+                                ambient = np.array(ambient_light)
+                                diffuse_color = mesh.diffuse_color * diffuse_intensity
+
+                                # Calculate the shading color
+                                shading_color = (ambient * mesh.ka + diffuse_color * mesh.kd) * 255
+                                shading_color = np.clip(shading_color, 0, 255).astype(np.uint8)
+
+                                # Calculate screen space coordinates from camera space
+                                screen_u, screen_v = self.camera_space_to_screen_space((x, y), triangle_verts, triangle_camera_verts)
+
+                                # Sample texture color
+                                texture_color = self.sample_texture(screen_u, screen_v, mesh.texture)
+
+                                # Blend texture color with shading color
+                                blend_factor = 0.5
+                                blended_color = (blend_factor * shading_color + (1 - blend_factor) * texture_color).astype(np.uint8)
+
+                              
+                                z = min(np.clip(255 * (depth), 0, 255)/225 + 0.7, 1.0)
+
+                                fade_weight = 0.9
+                                faded_color = (1 - z * fade_weight) * np.array(bg_color) + (z * fade_weight) * blended_color
+
+                                
+                                  # Apply the blended color to the image buffer
+                                image_buffer[y, x] = np.clip(blended_color, 0, 255)
+                                phong_buffer[y, x] = shading_color
+                                faded_buffer[y, x] = faded_color
+                                paint_coords[y, x] = 0
         
-        for brush_long, brush_point, ratio in zip(paint_long_large, paint_point_large, fill):
-            # for brush_size in paint_size:
-            self.paint.initialize_paint_coords()
-            self.paint.load_brush('brush/brush-1.png', brush_point)
-            self.paint.load_brush('brush/brush-2.png', brush_point)
-            self.paint.load_brush('brush/brush-3.png', brush_point)
-            self.paint.load_brush('brush/brush-4.png', brush_point)
-            self.paint.load_brush('brush/brush-long-1.png', brush_long)
-            self.paint.load_brush('brush/brush-long-3.png', brush_long)
-            self.paint.load_brush('brush/brush-long-4.png', brush_long)
-            self.paint.load_brush('brush/brush-long-6.png', brush_long)
-            self.paint.load_brush('brush/brush-long-7.png', brush_long)
-            
-            small_box_width = self.screen.width//100
-            small_box_height = self.screen.height//100
-            
-            while not self.paint.is_filled_90_percent(fill_ratio=ratio):
-                for i in range(0, small_box_width):
-                    for j in range(0, small_box_height):
-                        random_indices = self.paint.paint_random_pixel_of_100x100(i*100, j*100)
-                        for x, y in random_indices:
-                            self.paint.paint_at_pixel(buff, x, y, canvas, depth_buffer, normal_image, color_gradient_magnitude)
-        
-        # fill = [0.8, 0.5]
-        for brush_long, brush_point, ratio in zip(paint_long_small, paint_point_small, fill):
-            # for brush_size in paint_size:
-            self.paint.initialize_paint_coords()
-            self.paint.initialize_gradient_magnitude(color_gradient_magnitude)
-            self.paint.load_brush('brush/brush-1.png', brush_point)
-            self.paint.load_brush('brush/brush-2.png', brush_point)
-            self.paint.load_brush('brush/brush-3.png', brush_point)
-            self.paint.load_brush('brush/brush-4.png', brush_point)
-            # self.paint.load_brush('brush/brush-long-1.png', brush_long)
-            # self.paint.load_brush('brush/brush-long-3.png', brush_long)
-            # self.paint.load_brush('brush/brush-long-4.png', brush_long)
-            # self.paint.load_brush('brush/brush-long-6.png', brush_long)
-            # self.paint.load_brush('brush/brush-long-7.png', brush_long)
-            
-            while not self.paint.is_filled_color_gradient_magnitude(fill_ratio=ratio):
-                random_indices = self.paint.paint_random_pixel_of_gradient_magnitude()
-
-                if not random_indices:  # Stop if no valid pixels remain
-                    print("No more pixels to paint.")
-                    break
-
-                for x, y in random_indices:
-                    self.paint.paint_at_pixel_gradient(buff, x, y, canvas)
-
                 
-        self.screen.draw(canvas)
+        # self.screen.draw(paint.canvas)
+        # self.screen.draw(self.paint.paint_on_canvas(image_buffer, bg_color, faded_buffer=faded_buffer,phong_buffer=phong_buffer, paint_coords=paint_coords))
+        self.screen.draw(self.paint.paint_on_canvas(image_buffer, bg_color, phong_buffer=phong_buffer))
+
+    def camera_space_to_screen_space(self, pt, triangle_verts, triangle_camera_verts):
+        # Barycentric interpolation for camera-space mapping to screen space
+        x, y = pt
+        p0, p1, p2 = triangle_verts
+        c0, c1, c2 = triangle_camera_verts
+
+        denom = (p1[1] - p2[1]) * (p0[0] - p2[0]) + (p2[0] - p1[0]) * (p0[1] - p2[1])
+        w1 = ((p1[1] - p2[1]) * (x - p2[0]) + (p2[0] - p1[0]) * (y - p2[1])) / denom
+        w2 = ((p2[1] - p0[1]) * (x - p2[0]) + (p0[0] - p2[0]) * (y - p2[1])) / denom
+        w3 = 1 - w1 - w2
+
+        # Interpolate camera space x, y coordinates
+        camera_x = w1 * c0[0] + w2 * c1[0] + w3 * c2[0]
+        camera_y = w1 * c0[1] + w2 * c1[1] + w3 * c2[1]
+
+        # Project the camera-space coordinates to screen space
+        u = (camera_x + 1) / 2  
+        v = (camera_y + 1) / 2  
+
+        return u, v
+
+    def sample_texture(self, u, v, texture):
+        # Sample the texture using the interpolated camera space coordinates
+        u = np.clip(u, 0.0, 1.0)
+        v = np.clip(v, 0.0, 1.0)
         
-        
+        # Convert the texture coordinates to pixel coordinates
+        height, width, _ = texture.shape
+        x = int(u * width)
+        y = int(v * height)
+
+        # Clamp indices to be within valid bounds
+        x = np.clip(x, 0, width - 1)
+        y = np.clip(y, 0, height - 1)
+
+        return texture[y, x]
+    
+    def interpolate_depth(self, pt, triangle_verts, triangle_camera_verts):
+        x, y = pt
+        p0, p1, p2 = triangle_verts
+        c0, c1, c2 = triangle_camera_verts
+
+        denom = (p1[1] - p2[1]) * (p0[0] - p2[0]) + (p2[0] - p1[0]) * (p0[1] - p2[1])
+        w1 = ((p1[1] - p2[1]) * (x - p2[0]) + (p2[0] - p1[0]) * (y - p2[1])) / denom
+        w2 = ((p2[1] - p0[1]) * (x - p2[0]) + (p0[0] - p2[0]) * (y - p2[1])) / denom
+        w3 = 1 - w1 - w2
+
+        depth = w1 * c0[2] + w2 * c1[2] + w3 * c2[2]
+        return depth
+
+    def is_point_in_triangle(self, pt, verts):
+        x, y = pt
+        v0, v1, v2 = np.array(verts[0]), np.array(verts[1]), np.array(verts[2])
+
+        # Vectors from the point to the vertices
+        v0v1 = v1 - v0
+        v0v2 = v2 - v0
+        v0p = np.array([x, y]) - v0
+
+        # Barycentric coordinates calculation
+        dot00 = np.dot(v0v1, v0v1)
+        dot01 = np.dot(v0v1, v0v2)
+        dot02 = np.dot(v0v1, v0p)
+        dot11 = np.dot(v0v2, v0v2)
+        dot12 = np.dot(v0v2, v0p)
+
+        # Compute the inverse of the determinant (denom)
+        denom = dot00 * dot11 - dot01 * dot01
+
+        # If denom is too small, return False (degenerate triangle)
+        if np.abs(denom) < 1e-8:  # Small threshold to handle degenerate cases
+            return False
+
+        # Compute barycentric coordinates
+        invDenom = 1 / denom
+        u = (dot11 * dot02 - dot01 * dot12) * invDenom
+        v = (dot00 * dot12 - dot01 * dot02) * invDenom
+
+        # Check if the point is inside the triangle
+        return (u >= 0) and (v >= 0) and (u + v <= 1)

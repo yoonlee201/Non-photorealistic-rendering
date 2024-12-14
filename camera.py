@@ -1,117 +1,83 @@
-
-from transform import Transform
 import numpy as np
-from vector import Vector3, Vector4, Vector4x4
+from transform import Transform
 
-class Camera:
+
+class OrthoCamera:
     def __init__(self, left, right, bottom, top, near, far):
+        self.left = left
+        self.right = right
+        self.bottom = bottom
+        self.top = top
+        self.near = near
+        self.far = far
+        self.transform = Transform()  
+
+    def ratio(self):
+        return (self.right - self.left) / (self.top - self.bottom)
+    
+    def project_point(self, p):
+        # Transform point to camera space using inverse of camera transform
+        cam_space_point = self.transform.apply_inverse_to_point(p)
+
+        # Orthographic projection
+        ortho_proj = np.array([
+            2 * (cam_space_point[0] - self.left) / (self.right - self.left) - 1,
+            2 * (cam_space_point[1] - self.bottom) / (self.top - self.bottom) - 1,
+            -(2 * (cam_space_point[2] - self.near) / (self.far - self.near) - 1)
+        ])
+        return ortho_proj
+    
+
+    
+    def inverse_project_point(self, p):
+        # Inverse orthographic projection
+        cam_space_point = np.array([
+            (p[0] + 1) * (self.right - self.left) / 2 + self.left,
+            (p[1] + 1) * (self.top - self.bottom) / 2 + self.bottom,
+            (p[2] + 1) * (self.far - self.near) / 2 + self.far
+        ])
+
+        # Transform point from camera space to world space
+        world_space_point = self.transform.apply_to_point(cam_space_point)
+        return world_space_point
+
+class PerspectiveCamera:
+    def __init__(self, left, right, bottom, top, near, far):
+        self.left = left
+        self.right = right
+        self.bottom = bottom
+        self.top = top
+        self.near = near
+        self.far = far
         self.transform = Transform()
-        self.coord = (left, right, bottom, top, near, far)
-    
-    def get_view_vector(self):
-        return self.transform.apply_to_normal(Vector3(0, 0, 1))
 
-    def depth(self):
-        (_, _, _, _, n, f) = self.coord
-        return abs(f - n)
-        
     def ratio(self):
-        (left, right, bottom, top, _, _) = self.coord
-        return abs((right - left) / (top - bottom))
+        return (self.right - self.left) / (self.top - self.bottom)
     
-    def project_point(self, p: Vector3):
-        return Vector3(0,0,0)
     
-    def inverse_project_point(self, p: Vector3):
-        return Vector3(0,0,0)
-    
+    def project_point(self, p):
+        cam_space_point = self.transform.apply_inverse_to_point(p)
+        if cam_space_point[2] == 0:
+            raise ValueError("Z coordinate cannot be zero")
+        
+        perspective_proj = np.array([
+            (cam_space_point[0] / cam_space_point[2]) * (self.right - self.left) / 2 + (self.right + self.left) / 2,
+            (cam_space_point[1] / cam_space_point[2]) * (self.top - self.bottom) / 2 + (self.top + self.bottom) / 2,
+            cam_space_point[2]  
+        ])
+        perspective_proj[1] = -perspective_proj[1]  # Flip the y-axis for perspective camera
+        perspective_proj[0] = -perspective_proj[0]  # Flip the y-axis for perspective camera
 
-class OrthoCamera (Camera):
-    def __init__(self, left, right, bottom, top, near, far):
-        Camera.__init__(self, left, right, bottom, top, near, far)
+        return perspective_proj
     
-    def ratio(self):
-        return Camera.ratio(self)
-    
-    def project_point(self, p: Vector3):
-        (left, right, bottom, top, near, far) = self.coord
-        ortho = Vector4x4(
-            [[2/(right-left), 0, 0, -(right+left)/(right-left)],
-             [0, 2/(top-bottom), 0, -(top+bottom)/(top-bottom)],
-             [0, 0, 2/(near-far), -(near+far)/(near-far)],
-             [0, 0, 0, 1]])
-        
-        p = self.transform.apply_inverse_to_point(p)
-        return ((ortho) * p.homogeneous()).remove_W()
+    def inverse_project_point(self, p):
+        z_cam = (self.near * self.far) / ((self.far - self.near) * p[2] + self.near + self.far) * 2
 
-    
-    def inverse_project_point(self, p: Vector3):
-        (left, right, bottom, top, near, far) = self.coord
-        
-        ortho_inv = Vector4x4(np.linalg.inv(np.array(
-            [[2/(right-left), 0, 0, -(right+left)/(right-left)],
-             [0, 2/(top-bottom), 0, -(top+bottom)/(top-bottom)],
-             [0, 0, 2/(near-far), -(near+far)/(near-far)],
-             [0, 0, 0, 1]])))
-        
-        p_inv = (ortho_inv * p.homogeneous()).remove_W()
-        return self.transform.apply_to_point(p_inv)
+        x_cam = (p[0] * z_cam * (self.right - self.left)) / (2 * self.near)
+        y_cam = (p[1] * z_cam * (self.top - self.bottom)) / (2 * self.near) 
 
+        cam_space_point = np.array([x_cam, y_cam, z_cam])
 
-class PerspectiveCamera(Camera):
-    def __init__(self, left, right, bottom, top, near, far):
-        Camera.__init__(self, left, right, bottom, top, near, far)
-    
-    def ratio(self):
-        return Camera.ratio(self)
-    
-    def project_point(self, p: Vector3):
-        (left, right, bottom, top, near, far) = self.coord
-        perspective = Vector4x4(
-            [[near, 0, 0, 0],
-             [0, near, 0, 0],
-             [0, 0, near+far, -near*far],   
-             [0, 0, 1, 0]])
-        
-        ortho = Vector4x4(
-            [[2/(right-left), 0, 0, -(right+left)/(right-left)],
-             [0, 2/(top-bottom), 0, -(top+bottom)/(top-bottom)],
-             [0, 0, 2/(near-far), -(near+far)/(near-far)],
-             [0, 0, 0, 1]])
-        
-       
-        p = self.transform.apply_inverse_to_point(p)
-        return ((ortho * perspective) * p.homogeneous()).remove_W()
-    
-    def inverse_project_point(self, p: Vector3):
-        (left, right, bottom, top, near, far) = self.coord
-        
-        ortho_inv = Vector4x4(np.linalg.inv(np.array(
-            [[2/(right-left), 0, 0, -(right+left)/(right-left)],
-             [0, 2/(top-bottom), 0, -(top+bottom)/(top-bottom)],
-             [0, 0, 2/(near-far), -(near+far)/(near-far)],
-             [0, 0, 0, 1]])))
+        world_space_point = self.transform.apply_to_point(cam_space_point)
 
-        perspective_inv = Vector4x4(np.linalg.inv(np.array(
-            [[near, 0, 0, 0],
-             [0, near, 0, 0],
-             [0, 0, near+far, -near*far],   
-             [0, 0, 1, 0]]))) 
-
-        p_inv = ((perspective_inv * ortho_inv) * p.homogeneous()).remove_W()
-        return self.transform.apply_to_point(p_inv)
-    
-    @staticmethod    
-    def from_FOV(fov, near, far, ratio):
-        fov_rad = np.deg2rad(fov)
-        
-        right = near * np.tan(fov_rad/2)
-        left = -right
-        top = right / ratio
-        bottom = -top
-        
-        cls = PerspectiveCamera(left, right, bottom, top, near, far)
-        
-        return cls
-        
-        
+        return world_space_point
